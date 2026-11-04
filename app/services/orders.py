@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app import audit
 from app.models import (
-    ChecklistItem, Item, ItemStatus as IS, Listing, Order, OrderStatus as OS, Shipment,
+    ChecklistItem, Item, ItemStatus as IS, Listing, ListingFormat as LF, Order, OrderStatus as OS, Shipment,
     TrackingEvent, User,
 )
 from app.services import fx, notify, pricing, states
@@ -39,18 +39,27 @@ def get_order(db: Session, order_id: int) -> Order:
 
 def order_label(o: Order) -> str:
     it = o.item
-    return f"#{o.id} {it.card_name_en or it.card_name_jp or it.model_id} (cert {it.cert_number})"
+    qty = f" ×{o.quantity}" if (o.quantity or 1) > 1 else ""
+    return f"#{o.id} {it.display_name}{qty} ({it.key_label})"
 
 
 def create_order_from_sale(db: Session, user: User, listing: Listing, *, buyer: str, amount: Decimal,
                            currency: str, ship_country: str, sold_at: datetime | None, ebay_order_id: str | None,
-                           source: str) -> Order:
+                           source: str, quantity: int = 1) -> Order:
     if listing.status != "active":
         raise ServiceError("この出品は終了しています")
     item = db.get(Item, listing.item_id)
     assert item is not None
     if item.status != IS.LISTED:
         raise ServiceError("在庫が出品中ではありません")
+    try:
+        quantity = int(quantity or 1)
+    except (TypeError, ValueError):
+        raise ServiceError("数量は整数で入力してください")
+    if quantity < 1 or quantity > item.remaining:
+        raise ServiceError(f"数量は1〜{item.remaining}で入力してください（残り {item.remaining}）")
+    if listing.format == LF.AUCTION and quantity != 1:
+        raise ServiceError("オークションの数量は1です")
     if amount is None or amount <= 0:
         raise ServiceError("落札価格を入力してください")
     ship_country = (ship_country or "").strip().upper()
@@ -61,15 +70,23 @@ def create_order_from_sale(db: Session, user: User, listing: Listing, *, buyer: 
     o = Order(ebay_order_id=ebay_order_id or None, listing_id=listing.id, item_id=item.id,
               buyer_username=(buyer or "").strip() or None, ship_country=ship_country, total_amount=amount,
               currency=currency or "USD", status=OS.AWAITING_PAYMENT, sold_at=sold_at,
-              payment_due=sold_at + timedelta(days=days), source=source)
+              payment_due=sold_at + timedelta(days=days), source=source, quantity=quantity)
     db.add(o)
-    listing.status = "sold"
     listing.current_price = amount
+    item.quantity_sold = (item.quantity_sold or 0) + quantity
     db.flush()
-    states.transition_item(db, item, IS.SOLD, audit.Actor.user(user), action="item.sold")
+    if item.remaining == 0:
+        # 売り切れ：出品も在庫も終わり
+        listing.status = "sold"
+        states.transition_item(db, item, IS.SOLD, audit.Actor.user(user), action="item.sold")
+    else:
+        # 通常出品で在庫が残っている：出品はそのまま続く
+        item.version += 1
+        audit.log(db, audit.Actor.user(user), "item", item.id, "item.partially_sold",
+                  after={"quantity_sold": item.quantity_sold, "remaining": item.remaining})
     audit.log(db, audit.Actor.user(user), "order", o.id, "order.create",
               after={"listing_id": listing.id, "ebay_item_id": listing.ebay_item_id, "buyer": o.buyer_username,
-                     "amount": amount, "currency": o.currency, "ship_country": ship_country, "source": source})
+                     "quantity": quantity, "amount": amount, "currency": o.currency, "ship_country": ship_country, "source": source})
     notify.resolve(db, "listing", listing.id, ["auction_unrecorded"])
     notify.notify(db, "order_sold", "order", o.id,
                   f"🎉 落札・購入：{order_label(o)} / {o.currency} {amount} / 配送先 {ship_country}"
@@ -103,14 +120,22 @@ def cancel_unpaid(db: Session, user: User, o: Order, reason: str, version: int |
     states.transition_order(db, o, OS.CANCELLED, audit.Actor.user(user), reason=reason, action="order.cancel")
     o.cancelled_at = utcnow()
     item = o.item
-    states.transition_item(db, item, IS.PRICED, audit.Actor.user(user), reason="未払いキャンセル",
-                           action="item.back_to_priced")
+    item.quantity_sold = max(0, (item.quantity_sold or 0) - (o.quantity or 1))
+    if item.status == IS.SOLD:
+        # 売り切れで終わっていた出品は戻らないので、価格確定に戻して再出品する
+        states.transition_item(db, item, IS.PRICED, audit.Actor.user(user), reason="未払いキャンセル",
+                               action="item.back_to_priced")
+    else:
+        item.version += 1
+        audit.log(db, audit.Actor.user(user), "item", item.id, "item.quantity_returned",
+                  after={"quantity_sold": item.quantity_sold, "remaining": item.remaining},
+                  reason="未払いキャンセル（eBay側の在庫数も戻してください）")
     notify.resolve(db, "order", o.id, ["order_sold", "payment_reminder", "payment_overdue"])
     notify.enqueue_post(db, "orders", f"❌ 未払いキャンセル：{order_label(o)}（理由：{reason}）", order_id=o.id)
 
 
 def record_unsold(db: Session, user: User, listing: Listing) -> None:
-    """不落札 → 在庫は PRICED に戻り、再出品候補として値下げ案を出す。"""
+    """オークションの不落札／通常出品の出品終了（売れ残り）→ 在庫は PRICED に戻り、値下げ案を出す。"""
     if listing.status != "active":
         raise ServiceError("この出品は終了しています")
     item = db.get(Item, listing.item_id)
@@ -281,7 +306,7 @@ def toggle_checklist(db: Session, user: User, o: Order, key: str, checked: bool)
 
 def gross_profit(db: Session, o: Order) -> dict[str, Any] | None:
     """粗利（円）。為替は落札日の USD/JPY。"""
-    if o.total_amount is None or o.item.purchase_price_jpy is None:
+    if o.total_amount is None or o.item.purchase_price_jpy is None:  # 仕入値は1個あたり
         return None
     if o.currency == "JPY":
         rate, src = Decimal(1), "JPY"
@@ -294,9 +319,10 @@ def gross_profit(db: Session, o: Order) -> dict[str, Any] | None:
                  + Decimal(str(fees["per_order_fee_usd"]))) * rate
     duty = amt * Decimal(str(fees["duty_rate"])) * rate
     ship = Decimal(str(fees["shipping_cost_jpy"]))
-    gp = revenue - ebay_fees - duty - ship - Decimal(o.item.purchase_price_jpy)
+    purchase = o.item.purchase_price_jpy * (o.quantity or 1)
+    gp = revenue - ebay_fees - duty - ship - Decimal(purchase)
     return {"rate": rate, "source": src, "revenue_jpy": int(revenue), "fees_jpy": int(ebay_fees),
-            "duty_jpy": int(duty), "shipping_jpy": int(ship), "purchase_jpy": o.item.purchase_price_jpy,
+            "duty_jpy": int(duty), "shipping_jpy": int(ship), "purchase_jpy": purchase,
             "gross_profit_jpy": int(gp)}
 
 
@@ -352,7 +378,8 @@ def run_deadline_checks(db: Session, now: datetime | None = None) -> None:
                           dedupe_key=str(s.id), link_path=f"/orders/{o.id}")
 
     # オークション終了後に落札未記録（APIなし運用）
-    for lst in db.scalars(select(Listing).where(Listing.status == "active", Listing.end_time.is_not(None),
+    for lst in db.scalars(select(Listing).where(Listing.status == "active", Listing.format == LF.AUCTION,
+                                                Listing.end_time.is_not(None),
                                                 Listing.end_time <= now)):
         notify.notify(db, "auction_unrecorded", "listing", lst.id,
                       f"🔔 出品の終了時刻を過ぎましたが、落札・不落札が未記録です：{lst.title}（eBay {lst.ebay_item_id}）",

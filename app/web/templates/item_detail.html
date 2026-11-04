@@ -1,9 +1,18 @@
 {% extends "base.html" %}
-{% from "macros.html" import item_badge, order_badge, version_field %}
-{% block title %}cert {{ item.cert_number }}{% endblock %}
+{% from "macros.html" import item_badge, order_badge, version_field, cat_badge, fmt_badge %}
+{% block title %}{{ item.key_label }}{% endblock %}
 {% block content %}
-<h1>cert {{ item.cert_number }} {{ item_badge(item.status) }}{% if item.relist_count %} <span class="badge">不落札 {{ item.relist_count }}回</span>{% endif %}</h1>
-<p>{{ item.card_name_jp or '' }} / {{ item.card_name_en or '' }} <span class="muted">({{ item.model_id }})</span></p>
+<h1>{{ item.key_label }} {{ item_badge(item.status) }}{% if item.relist_count %} <span class="badge">不落札・売れ残り {{ item.relist_count }}回</span>{% endif %}</h1>
+<p>{{ cat_badge(item) }} {{ fmt_badge(item.listing_format) }} {{ item.card_name_jp or '' }}{% if item.card_name_en %} / {{ item.card_name_en }}{% endif %}
+  <span class="muted">{% if item.model_id %}({{ item.model_id }}){% endif %}{% if condition %} 状態 {{ condition.short }}{% endif %}
+  {% if item.quantity > 1 %} ・ 数量 {{ item.quantity }}（販売済み {{ item.quantity_sold }} / 残り {{ item.remaining }}）{% endif %}</span></p>
+{% if item.status in ('INTAKE','PHOTOGRAPHED','PRICED','READY') %}
+<form method="post" action="/items/{{ item.id }}/format" class="inline">{{ version_field(item) }}
+  <input type="hidden" name="listing_format" value="{{ 'auction' if item.listing_format == 'fixed' else 'fixed' }}">
+  <button class="small" {% if item.listing_format == 'fixed' and item.remaining > 1 %}disabled title="数量が2以上なのでオークションにできません"{% endif %}
+    onclick="return confirm('出品形式を変更しますか？価格は新しい形式で承認し直します')">{{ 'オークション' if item.listing_format == 'fixed' else '通常出品' }}に移す</button>
+</form>
+{% endif %}
 
 <div class="actions">
   {% if item.status == 'INTAKE' or item.status in ('PHOTOGRAPHED','PRICED','READY') %}<a class="btn" href="/photos/{{ item.id }}">撮影・差し替え</a>{% endif %}
@@ -28,28 +37,40 @@
 <div class="card">
   <dl class="kv">
     <dt>eBay商品ID</dt><dd><a href="https://www.ebay.com/itm/{{ active_listing.ebay_item_id }}" target="_blank">{{ active_listing.ebay_item_id }}</a></dd>
-    <dt>形式</dt><dd>{{ 'オークション' if active_listing.format == 'auction' else '即決' }} ・ 開始 {{ active_listing.start_price|money }}{% if active_listing.bin_price %} ・ 即決 {{ active_listing.bin_price|money }}{% endif %}</dd>
+    {% if active_listing.format == 'auction' %}
+    <dt>形式</dt><dd>オークション ・ 開始 {{ active_listing.start_price|money }}{% if active_listing.bin_price %} ・ 即決 {{ active_listing.bin_price|money }}{% endif %}</dd>
     <dt>終了時刻</dt><dd>{{ active_listing.end_time|jst if active_listing.end_time else '—' }}
       <form class="inline" method="post" action="/listings/{{ active_listing.id }}/end-time"><input type="datetime-local" name="end_time" style="width:auto"><button class="small">修正</button></form></dd>
+    {% else %}
+    <dt>形式</dt><dd>通常出品（GTC） ・ {{ active_listing.start_price|money }}</dd>
+    <dt>数量</dt><dd>出品 {{ active_listing.quantity }} ・ 残り <b>{{ item.remaining }}</b></dd>
+    {% endif %}
   </dl>
-  <h3>落札を記録（eBayの画面を見て入力）</h3>
+  <h3>{{ '落札' if active_listing.format == 'auction' else '販売' }}を記録（eBayの画面を見て入力）</h3>
   <form method="post" action="/listings/{{ active_listing.id }}/sale">
     <div class="row">
       <div><label>落札者（eBayユーザー名）</label><input type="text" name="buyer" required></div>
-      <div><label>落札価格</label><input type="text" name="amount" inputmode="decimal" required></div>
+      {% if active_listing.format == 'fixed' %}<div><label>数量（残り {{ item.remaining }}）</label><input type="number" name="quantity" min="1" max="{{ item.remaining }}" value="1"></div>{% endif %}
+      <div><label>{{ '落札価格' if active_listing.format == 'auction' else '合計金額（送料込み・注文全体）' }}</label><input type="text" name="amount" inputmode="decimal" required></div>
       <div><label>通貨</label><select name="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option></select></div>
       <div><label>配送先国（2文字）</label><input type="text" name="ship_country" maxlength="2" placeholder="US" required></div>
     </div>
     <div class="row">
-      <div><label>落札日時（JST、空欄なら今）</label><input type="datetime-local" name="sold_at"></div>
+      <div><label>{{ '落札' if active_listing.format == 'auction' else '購入' }}日時（JST、空欄なら今）</label><input type="datetime-local" name="sold_at"></div>
       <div><label>eBay注文番号（任意）</label><input type="text" name="ebay_order_id"></div>
-      <div><label><input type="checkbox" name="paid" value="1"> 支払も完了している（即決）</label></div>
+      <div><label><input type="checkbox" name="paid" value="1" {% if active_listing.format == 'fixed' %}checked{% endif %}> 支払も完了している{% if active_listing.format == 'fixed' %}（通常出品は即時支払い）{% endif %}</label></div>
     </div>
-    <div class="actions"><button class="primary">落札を記録</button></div>
+    <div class="actions"><button class="primary">{{ '落札' if active_listing.format == 'auction' else '販売' }}を記録</button></div>
   </form>
+  {% if active_listing.format == 'auction' %}
   <form method="post" action="/listings/{{ active_listing.id }}/unsold" onsubmit="return confirm('不落札として記録し、価格確定に戻しますか？')">
     <div class="actions"><button>不落札を記録</button></div>
   </form>
+  {% else %}
+  <form method="post" action="/listings/{{ active_listing.id }}/unsold" onsubmit="return confirm('eBayで出品を終了しましたか？残りの在庫は価格確定に戻り、値下げ案が出ます')">
+    <div class="actions"><button>出品終了を記録（売れ残り）</button></div>
+  </form>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -57,7 +78,7 @@
 <form method="post" action="/items/{{ item.id }}/edit" class="card">
   {{ version_field(item) }}
   <div class="row">
-    <div><label>モデルID</label><input type="text" name="model_id" value="{{ item.model_id }}"></div>
+    <div><label>モデルID</label><input type="text" name="model_id" value="{{ item.model_id or '' }}"></div>
     <div><label>セットID</label><input type="text" name="set_id" value="{{ item.set_id or '' }}"></div>
     <div><label>型番</label><input type="text" name="card_number" value="{{ item.card_number or '' }}"></div>
     <div><label>セット名</label><input type="text" name="set_name" value="{{ item.set_name or '' }}"></div>
@@ -65,15 +86,23 @@
   <div class="row">
     <div><label>カード名（日本語）</label><input type="text" name="card_name_jp" value="{{ item.card_name_jp or '' }}"></div>
     <div><label>カード名（英語）</label><input type="text" name="card_name_en" value="{{ item.card_name_en or '' }}"></div>
+    {% if item.category == 'psa' %}
     <div><label>グレーダー</label><input type="text" name="grader" value="{{ item.grader or '' }}"></div>
     <div><label>グレード</label><input type="text" name="grade" value="{{ item.grade or '' }}"></div>
     <div><label>Population</label><input type="number" name="psa_population" value="{{ item.psa_population or '' }}"></div>
+    {% endif %}
+    {% if item.category == 'single' %}
+    <div><label>状態</label><select name="condition">{% for c in conditions %}<option value="{{ c.key }}" {% if item.condition == c.key %}selected{% endif %}>{{ c.short }} — {{ c.label }}</option>{% endfor %}</select></div>
+    {% endif %}
+    {% if item.category in ('single','pack','box') %}
+    <div><label>数量</label><input type="number" name="quantity" min="{{ [item.quantity_sold, 1]|max }}" value="{{ item.quantity }}" {% if item.status in ('LISTED','SOLD') %}readonly{% endif %}></div>
+    {% endif %}
   </div>
   <div class="row">
     <div><label>保管ボックス</label><input type="text" name="storage_box" value="{{ item.storage_box or '' }}"></div>
     <div><label>位置</label><input type="text" name="storage_slot" value="{{ item.storage_slot or '' }}"></div>
     {% if show_price %}
-    <div><label>仕入値（円）{% if user.level < 2 %}<span class="small">※修正はLv2</span>{% endif %}</label><input type="number" name="purchase_price_jpy" value="{{ item.purchase_price_jpy or '' }}" {% if user.level < 2 %}readonly{% endif %}></div>
+    <div><label>仕入値（円{% if item.quantity > 1 %}・1個あたり{% endif %}）{% if user.level < 2 %}<span class="small">※修正はLv2</span>{% endif %}</label><input type="number" name="purchase_price_jpy" value="{{ item.purchase_price_jpy or '' }}" {% if user.level < 2 %}readonly{% endif %}></div>
     <div><label>仕入日</label><input type="date" name="purchase_date" value="{{ item.purchase_date or '' }}" {% if user.level < 2 %}readonly{% endif %}></div>
     {% endif %}
   </div>

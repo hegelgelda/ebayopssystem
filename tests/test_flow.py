@@ -10,6 +10,11 @@ from sqlalchemy import select
 from tests.conftest import jpeg_bytes
 
 
+def done_id(r) -> int:
+    from urllib.parse import parse_qs, urlparse
+    return int(parse_qs(urlparse(r.headers["location"]).query)["done"][0])
+
+
 def register(client, cert="12345678", **kw):
     data = {"cert_number": cert, "model_id": "SV2a-201", "card_name_jp": "リザードンex", "card_name_en": "Charizard ex",
             "set_name": "Pokemon Card 151", "grade": "10", "grader": "PSA", "purchase_price_jpy": "30000",
@@ -51,7 +56,7 @@ def test_full_flow(admin_client, staff_client, users, env):
     # 入荷登録（Lv1）
     r = register(staff_client)
     assert r.status_code == 303 and r.headers["location"].startswith("/intake?done=")
-    item_id = int(r.headers["location"].split("=")[1])
+    item_id = done_id(r)
     # 重複登録は拒否され、既存レコードへ
     r = register(staff_client)
     assert r.status_code == 303 and r.headers["location"] == f"/items/{item_id}"
@@ -194,7 +199,7 @@ def test_unsold_relist_suggests_discount(admin_client, users, env):
     from app.adapters.manual import mark_listed
     from app.services import pricing
     r = register(admin_client, cert="22223333")
-    item_id = int(r.headers["location"].split("=")[1])
+    item_id = done_id(r)
     upload(admin_client, item_id, "front")
     upload(admin_client, item_id, "back")
     run_jobs()

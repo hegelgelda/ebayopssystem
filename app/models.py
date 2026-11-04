@@ -33,6 +33,30 @@ class ItemStatus:
     }
 
 
+class Category:
+    """在庫の区分。PSA は cert 番号、それ以外はツールが振る SKU を在庫のキーにする。"""
+    PSA = "psa"
+    SINGLE = "single"
+    PACK = "pack"
+    BOX = "box"
+    BULK = "bulk"
+    ALL = [PSA, SINGLE, PACK, BOX, BULK]
+    LABELS = {PSA: "PSA鑑定品", SINGLE: "シングル", PACK: "パック", BOX: "BOX", BULK: "バルク"}
+    SKU_PREFIX = {SINGLE: "S", PACK: "P", BOX: "X", BULK: "L"}
+    # 撮影で必須の写真。バルクは全体写真1枚
+    REQUIRED_PHOTOS = {PSA: ["front", "back"], SINGLE: ["front", "back"], PACK: ["front", "back"],
+                       BOX: ["front", "back"], BULK: ["front"]}
+    PHOTO_LABELS = {BULK: {"front": "全体（必須）", "back": "裏・詳細（任意）"}}
+
+
+class ListingFormat:
+    """出品のレーン。撮影から出品中まで、通常出品とオークションは混ぜずに進める。"""
+    FIXED = "fixed"
+    AUCTION = "auction"
+    ALL = [FIXED, AUCTION]
+    LABELS = {FIXED: "通常出品", AUCTION: "オークション"}
+
+
 class OrderStatus:
     AWAITING_PAYMENT = "AWAITING_PAYMENT"
     AWAITING_SHIPMENT = "AWAITING_SHIPMENT"
@@ -88,11 +112,23 @@ class CertCatalog(Base):
     imported_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+def _default_sku(ctx) -> str:
+    """SKU 未指定なら cert 番号（PSA）。それも無ければ一時値（登録処理で区分ごとの SKU に置き換える）。"""
+    import uuid
+    return ctx.get_current_parameters().get("cert_number") or f"tmp-{uuid.uuid4().hex[:24]}"
+
+
 class Item(Base):
     __tablename__ = "items"
     id: Mapped[int] = mapped_column(primary_key=True)
-    cert_number: Mapped[str] = mapped_column(String(32), unique=True)
-    model_id: Mapped[str] = mapped_column(String(64), index=True)
+    category: Mapped[str] = mapped_column(String(8), default=Category.PSA, index=True)
+    sku: Mapped[str] = mapped_column(String(32), unique=True, default=_default_sku)  # PSA は cert 番号と同じ
+    cert_number: Mapped[str | None] = mapped_column(String(32), unique=True)
+    model_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    listing_format: Mapped[str] = mapped_column(String(8), default=ListingFormat.AUCTION, index=True)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    quantity_sold: Mapped[int] = mapped_column(Integer, default=0)
+    condition: Mapped[str | None] = mapped_column(String(16))  # シングル（未鑑定）の状態
     card_name_jp: Mapped[str | None] = mapped_column(String(200))
     card_name_en: Mapped[str | None] = mapped_column(String(200))
     set_id: Mapped[str | None] = mapped_column(String(32), index=True)
@@ -119,6 +155,29 @@ class Item(Base):
 
     photos: Mapped[list["Photo"]] = relationship(back_populates="item", order_by="Photo.id")
     registrant: Mapped[User | None] = relationship(foreign_keys=[registered_by])
+
+    @property
+    def display_name(self) -> str:
+        return (self.card_name_jp or self.card_name_en or self.set_name or self.model_id or self.sku or "")
+
+    @property
+    def key_label(self) -> str:
+        return f"cert {self.cert_number}" if self.category == Category.PSA and self.cert_number else f"SKU {self.sku}"
+
+    @property
+    def remaining(self) -> int:
+        return max(0, (self.quantity or 1) - (self.quantity_sold or 0))
+
+    @property
+    def category_label(self) -> str:
+        return Category.LABELS.get(self.category, self.category)
+
+    @property
+    def format_label(self) -> str:
+        return ListingFormat.LABELS.get(self.listing_format, self.listing_format)
+
+    def required_photos(self) -> list[str]:
+        return Category.REQUIRED_PHOTOS.get(self.category, ["front", "back"])
 
     def active_photos(self) -> list["Photo"]:
         return [p for p in self.photos if p.replaced_by_photo_id is None]
@@ -154,7 +213,7 @@ class Photo(Base):
 
     @property
     def public_rel_path(self) -> str:
-        return f"{self.item.cert_number}/{self.seq}-{self.public_token}.jpg"
+        return f"{self.item.sku}/{self.seq}-{self.public_token}.jpg"
 
 
 class PriceQuote(Base):
@@ -190,6 +249,7 @@ class ListingDraft(Base):
     item_specifics_json: Mapped[dict] = mapped_column(JSON, default=dict)
     format: Mapped[str] = mapped_column(String(16), default="auction")  # auction / fixed
     duration_days: Mapped[int] = mapped_column(Integer, default=7)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
     start_price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     bin_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     currency: Mapped[str] = mapped_column(String(3), default="USD")
@@ -207,6 +267,7 @@ class ExportBatch(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     file_path: Mapped[str] = mapped_column(String(500))
     item_count: Mapped[int] = mapped_column(Integer)
+    format: Mapped[str | None] = mapped_column(String(8))  # このCSVのレーン（混在させない）
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     result_imported_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -220,6 +281,7 @@ class Listing(Base):
     ebay_item_id: Mapped[str | None] = mapped_column(String(32), index=True)
     title: Mapped[str] = mapped_column(String(80))
     format: Mapped[str] = mapped_column(String(16))
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
     start_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     bin_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     current_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
@@ -248,6 +310,7 @@ class Order(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("items.id"), index=True)
     buyer_username: Mapped[str | None] = mapped_column(String(100))
     ship_country: Mapped[str | None] = mapped_column(String(2))
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
     total_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     fx_rate_jpy: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))

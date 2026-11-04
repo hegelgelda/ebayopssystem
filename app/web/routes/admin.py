@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app import audit
 from app.db import get_db
-from app.models import AuditLog, DutyOverride, DutySchedule, Notification, Order, User
+from app.models import AuditLog, Category, DutyOverride, DutySchedule, ListingFormat as LF, Notification, Order, User
 from app.services import duty, items as item_svc, listing as listing_svc, notify, orders as order_svc, users as user_svc
 from app.services.errors import NotFound, ServiceError
 from app.settings_store import DEFAULTS, get_setting, set_setting
@@ -30,6 +30,7 @@ def dashboard(request: Request, user: User = Depends(current_user), db: Session 
         Notification.escalate_at.is_not(None)).order_by(Notification.sent_at.desc()).limit(30)).all()
     return render(request, "dashboard.html", {
         "user": user, "rows": rows, "counts": item_svc.status_counts(db), "stale": item_svc.stale_items(db),
+        "lane_counts": {f: item_svc.status_counts(db, f) for f in LF.ALL}, "LF": LF,
         "next_listing": duty.next_listing_date(db), "duty_user": duty.duty_user_for(db),
         "photographers": duty.role_users(db, "is_photographer"),
         "approvers": duty.role_users(db, "is_price_approver"), "notes": pending_notes, "today": today_jst()})
@@ -66,8 +67,8 @@ def notification_claim(nid: int, request: Request, user: User = Depends(current_
 
 # ---- 設定（Lv2） ----
 
-JSON_KEYS = ["escalation_minutes", "checklist_items", "tracking_regex", "price_rule", "fees", "listing_defaults",
-             "stale_days", "digest_times_jst"]
+JSON_KEYS = ["fees", "listing_defaults", "ebay_categories", "raw_conditions", "default_format_by_category",
+             "price_rule", "escalation_minutes", "checklist_items", "tracking_regex", "stale_days", "digest_times_jst"]
 
 
 @router.get("/settings")
@@ -77,13 +78,15 @@ def settings_page(request: Request, user: User = Depends(require_lv2), db: Sessi
     overrides = db.scalars(select(DutyOverride).where(DutyOverride.date >= date.today())
                            .order_by(DutyOverride.date)).all()
     json_values = {k: json.dumps(get_setting(db, k), ensure_ascii=False, indent=2) for k in JSON_KEYS}
-    templates = {k: listing_svc.get_template(db, k) for k in ("title", "description", "item_specifics")}
+    templates = {cat: {part: listing_svc.get_template(db, listing_svc.template_key(cat, part))
+                       for part in listing_svc.TEMPLATE_PARTS} for cat in Category.ALL}
     db.commit()
     return render(request, "settings.html", {
         "user": user, "users": users, "schedule": schedule, "overrides": overrides, "json_values": json_values,
         "listing_weekdays": get_setting(db, "listing_weekdays"), "duty_on_holiday": get_setting(db, "duty_on_holiday"),
         "show_pp": get_setting(db, "show_purchase_price_to_lv1"), "adapter": get_setting(db, "ebay_adapter"),
-        "templates": templates, "ship_due_hours": (get_setting(db, "ship_due_notify_hour_jst"),
+        "templates": templates, "Category": Category, "part_labels": listing_svc.PART_LABELS,
+        "ship_due_hours": (get_setting(db, "ship_due_notify_hour_jst"),
                                                    get_setting(db, "ship_due_escalate_hour_jst"))})
 
 
@@ -181,7 +184,7 @@ def settings_template(key: str, request: Request, body: str = Form(...), user: U
     listing_svc.update_template(db, user, key, body)
     db.commit()
     flash(request, f"テンプレート（{key}）を保存しました")
-    return to("/settings#templates")
+    return to("/settings#tpl-" + key.split(".")[0])
 
 
 # ---- ユーザー管理（Lv2） ----

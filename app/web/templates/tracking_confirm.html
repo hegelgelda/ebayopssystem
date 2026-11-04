@@ -3,7 +3,7 @@
 {% block content %}
 <h1>追跡番号の確認</h1>
 <div class="card">
-  <p>注文 #{{ o.id }} cert {{ o.item.cert_number }} {{ o.item.card_name_en or o.item.card_name_jp }}</p>
+  <p>注文 #{{ o.id }} {{ o.item.key_label }} {{ o.item.display_name }}{% if o.quantity > 1 %} ×{{ o.quantity }}{% endif %}</p>
   <dl class="kv"><dt>キャリア</dt><dd><b>{{ carriers[carrier] }}</b></dd><dt>追跡番号</dt><dd><b style="font-size:20px;letter-spacing:1px">{{ number }}</b></dd></dl>
   <p class="small muted">送り状の番号と一致しているか確認してください。登録後の修正・削除はLv2のみ可能です。</p>
   <form method="post" action="/orders/{{ o.id }}/tracking" class="actions">

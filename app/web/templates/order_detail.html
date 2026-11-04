@@ -10,7 +10,7 @@
     <div class="photos" style="grid-template-columns:1fr 1fr">
       {% for p in item.active_photos() if p.kind in ('front','back') and p.processed_path %}<img src="/img/{{ p.processed_path }}">{% endfor %}
     </div>
-    <p><a href="/items/{{ item.id }}">cert {{ item.cert_number }}</a> {{ item.card_name_jp or '' }} {{ item.card_name_en or '' }}<br>
+    <p><a href="/items/{{ item.id }}">{{ item.key_label }}</a> {{ item.category_label }} {{ item.card_name_jp or '' }} {{ item.card_name_en or '' }}{% if o.quantity > 1 %} <b>×{{ o.quantity }}</b>{% endif %}<br>
     <b>保管場所：{{ item.storage_box }}{% if item.storage_slot %}-{{ item.storage_slot }}{% endif %}</b></p>
   </div>
   <div class="card">

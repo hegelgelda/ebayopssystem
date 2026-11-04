@@ -60,7 +60,7 @@ def save_upload(db: Session, user: User, item: Item, kind: str, data: bytes, fil
         raise ServiceError("売却済み・取り下げの在庫には写真を追加できません")
 
     cfg = get_config()
-    odir = cfg.originals_dir / item.cert_number
+    odir = cfg.originals_dir / item.sku
     odir.mkdir(parents=True, exist_ok=True)
     opath = odir / f"{uuid.uuid4().hex}{ext}"
     opath.write_bytes(data)
@@ -102,7 +102,7 @@ def save_upload(db: Session, user: User, item: Item, kind: str, data: bytes, fil
 
 
 def maybe_mark_photographed(db: Session, item: Item, actor: audit.Actor) -> None:
-    if item.status == IS.INTAKE and item.photo("front") and item.photo("back"):
+    if item.status == IS.INTAKE and all(item.photo(k) for k in item.required_photos()):
         states.transition_item(db, item, IS.PHOTOGRAPHED, actor, action="item.photographed")
         from app.services import pricing
         pricing.ensure_open_quote(db, item)

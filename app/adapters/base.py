@@ -27,8 +27,8 @@ class SubmitResult:
 
 @dataclass
 class ImportResult:
-    listed: list[tuple[str, str]] = field(default_factory=list)  # (cert, ebay_item_id)
-    failed: list[tuple[str, str]] = field(default_factory=list)  # (cert, error)
+    listed: list[tuple[str, str]] = field(default_factory=list)  # (SKU, ebay_item_id)
+    failed: list[tuple[str, str]] = field(default_factory=list)  # (SKU, error)
     skipped: list[tuple[str, str]] = field(default_factory=list)
 
 
@@ -55,7 +55,7 @@ class OrderAdapter(ABC):
     @abstractmethod
     def record_sale(self, db: Session, user: User, listing: Listing, *, buyer: str, amount: Decimal,
                     currency: str, ship_country: str, sold_at: datetime | None = None,
-                    ebay_order_id: str | None = None, paid: bool = False) -> Order: ...
+                    ebay_order_id: str | None = None, paid: bool = False, quantity: int = 1) -> Order: ...
 
     @abstractmethod
     def record_payment(self, db: Session, user: User, order: Order, paid_at: datetime | None = None,

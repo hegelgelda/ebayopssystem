@@ -1,14 +1,15 @@
 {% extends "base.html" %}
-{% from "macros.html" import item_badge %}
-{% block title %}撮影 cert {{ item.cert_number }}{% endblock %}
+{% from "macros.html" import item_badge, cat_badge, fmt_badge %}
+{% block title %}撮影 {{ item.key_label }}{% endblock %}
 {% block content %}
-<h1>撮影：cert {{ item.cert_number }} <span id="item-status">{{ item_badge(item.status) }}</span></h1>
-<p>{{ item.card_name_jp or '' }} {{ item.card_name_en or '' }} <span class="muted small">{{ item.model_id }} / {{ item.grader }} {{ item.grade }} / 保管 {{ item.storage_box }}{% if item.storage_slot %}-{{ item.storage_slot }}{% endif %}</span></p>
+<h1>撮影：{{ item.key_label }} <span id="item-status">{{ item_badge(item.status) }}</span></h1>
+<p>{{ cat_badge(item) }} {{ fmt_badge(item.listing_format) }} {{ item.display_name }}
+  <span class="muted small">{% if item.model_id %}{{ item.model_id }} / {% endif %}{% if item.category == 'psa' %}{{ item.grader }} {{ item.grade }} / {% endif %}{% if item.quantity > 1 %}数量 {{ item.quantity }} / {% endif %}保管 {{ item.storage_box }}{% if item.storage_slot %}-{{ item.storage_slot }}{% endif %}</span></p>
 <div id="queue-status" class="small muted"></div>
 {% if item.status in ('SOLD', 'WITHDRAWN') %}<div class="flash warn">売却済み・取り下げの在庫には写真を追加できません。</div>{% endif %}
 
 <div class="grid" id="slots">
-  {% for kind, label in [('front', '表（必須）'), ('back', '裏（必須）')] %}
+  {% for kind, label, required in slots %}
   {% set p = item.photo(kind) %}
   <div class="slot {% if p %}filled{% endif %}" data-kind="{{ kind }}" data-photo-id="{{ p.id if p else '' }}">
     <b>{{ label }}</b>
@@ -32,8 +33,8 @@
 </div>
 
 <div class="actions" style="margin-top:20px">
-  {% if next_item %}<a class="btn primary big" href="/photos/{{ next_item.id }}">次のレコードへ（cert {{ next_item.cert_number }}）</a>{% endif %}
-  <a class="btn" href="/photos">未撮影一覧へ</a>
+  {% if next_item %}<a class="btn primary big" href="/photos/{{ next_item.id }}">次の{{ next_item.category_label }}へ（{{ next_item.key_label }}）</a>{% endif %}
+  <a class="btn" href="/photos?category={{ item.category }}">未撮影一覧へ</a>
   <a class="btn" href="/items/{{ item.id }}">在庫詳細</a>
 </div>
 {% endblock %}

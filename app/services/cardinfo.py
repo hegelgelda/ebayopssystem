@@ -11,7 +11,7 @@ import re
 from typing import Any
 
 import httpx
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import get_config
@@ -114,6 +114,41 @@ def _psa_scrape(cert: str) -> dict[str, Any] | None:
         return None
     data = parse_psa_cert_html(r.text)
     return data or None
+
+
+def normalize_card_number(raw: str) -> str:
+    """「201/165」「No.201」「 0201 」→「201」。英字付き（SV-P 001 等）は大文字にしてそのまま。"""
+    s = (raw or "").strip().upper()
+    s = re.sub(r"^NO\.?\s*", "", s)
+    s = s.split("/", 1)[0].strip()
+    return s.lstrip("0") or s
+
+
+def search_by_number(db: Session, number: str, set_q: str = "", limit: int = 30) -> list[CardCatalog]:
+    """シングル用：型番で候補を出す。セット（ID・名前の一部）で絞り込める。"""
+    n = normalize_card_number(number)
+    if not n:
+        return []
+    stmt = select(CardCatalog).where(or_(
+        func.upper(func.ltrim(CardCatalog.card_number, "0")) == n,
+        func.upper(CardCatalog.card_number).like(f"{n}/%"),
+        func.upper(func.ltrim(CardCatalog.card_number, "0")).like(f"{n}/%"),
+    ))
+    set_q = (set_q or "").strip()
+    if set_q:
+        like = f"%{set_q}%"
+        stmt = stmt.where(or_(CardCatalog.set_id.ilike(like), CardCatalog.set_name.ilike(like)))
+    return list(db.scalars(stmt.order_by(CardCatalog.set_id).limit(limit)).all())
+
+
+def search_sets(db: Session, q: str = "", limit: int = 30) -> list[dict[str, str | None]]:
+    """パック・BOX用：カード一覧に登録されているセットの一覧。"""
+    stmt = select(CardCatalog.set_id, func.max(CardCatalog.set_name)).group_by(CardCatalog.set_id)
+    q = (q or "").strip()
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(or_(CardCatalog.set_id.ilike(like), CardCatalog.set_name.ilike(like)))
+    return [{"set_id": sid, "set_name": name} for sid, name in db.execute(stmt.order_by(CardCatalog.set_id).limit(limit))]
 
 
 def candidates(db: Session, q: str, limit: int = 20) -> list[CardCatalog]:

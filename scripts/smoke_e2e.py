@@ -48,7 +48,7 @@ def main():
                                 "card_name_en": "Charizard ex", "set_name": "Pokemon Card 151", "grade": "10",
                                 "purchase_price_jpy": "30000", "storage_box": "B1", "storage_slot": "1"})
     assert r.status_code == 303 and "done=" in r.headers["location"], (r.status_code, r.text[:300])
-    item_id = int(r.headers["location"].split("=")[1])
+    item_id = int(r.headers["location"].split("done=")[1].split("&")[0])
     step(f"入荷登録 cert {cert} → item {item_id}")
 
     for kind, color in (("front", (40, 90, 200)), ("back", (30, 140, 60))):
@@ -90,7 +90,7 @@ def main():
     r = s.post("/listings/generate", data={"item_id": str(item_id)})
     draft_id = int(r.headers["location"].rsplit("/", 1)[1])
     r = a.post(f"/drafts/{draft_id}/confirm")
-    assert r.status_code == 303 and r.headers["location"] == "/listings", r.headers
+    assert r.status_code == 303 and r.headers["location"] == "/listings?lane=auction", r.headers
     r = s.post("/listings/export", data={"draft_id": str(draft_id)})
     batch = r.headers["location"].split("batch=")[1]
     text = s.get(f"/exports/{batch}.csv").content.decode("utf-8-sig")

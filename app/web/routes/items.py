@@ -5,15 +5,18 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app import audit
 from app.config import get_config
 from app.db import get_db
-from app.models import AuditLog, Comment, Item, ItemStatus as IS, Listing, Order, Photo, User
+from app.models import (
+    AuditLog, Category, Comment, Item, ItemStatus as IS, Listing, ListingFormat as LF, Order, Photo, User,
+)
 from app.services import cardinfo, items as item_svc, listing as listing_svc, photos as photo_svc, pricing
 from app.services.errors import NotFound, ServiceError
+from app.settings_store import get_setting
 from app.web.deps import current_user, flash, render, require_lv2
 from app.web.routes.common import back, form_int, to
 
@@ -22,9 +25,13 @@ router = APIRouter()
 
 @router.get("/items")
 def items_list(request: Request, status: str = "", set_id: str = "", box: str = "", q: str = "",
-               date_from: str = "", date_to: str = "", user: User = Depends(current_user),
-               db: Session = Depends(get_db)):
+               date_from: str = "", date_to: str = "", category: str = "", fmt: str = "",
+               user: User = Depends(current_user), db: Session = Depends(get_db)):
     stmt = select(Item)
+    if category:
+        stmt = stmt.where(Item.category == category)
+    if fmt:
+        stmt = stmt.where(Item.listing_format == fmt)
     if status:
         stmt = stmt.where(Item.status == status)
     if set_id:
@@ -33,7 +40,8 @@ def items_list(request: Request, status: str = "", set_id: str = "", box: str = 
         stmt = stmt.where(Item.storage_box == box)
     if q:
         like = f"%{q}%"
-        stmt = stmt.where(or_(Item.cert_number.like(like), Item.model_id.ilike(like), Item.card_name_jp.like(like),
+        stmt = stmt.where(or_(Item.cert_number.like(like), Item.sku.ilike(like), Item.model_id.ilike(like),
+                              Item.card_name_jp.like(like), Item.card_number.ilike(like),
                               Item.card_name_en.ilike(like), Item.set_name.ilike(like)))
     if date_from:
         stmt = stmt.where(Item.created_at >= date.fromisoformat(date_from))
@@ -44,17 +52,24 @@ def items_list(request: Request, status: str = "", set_id: str = "", box: str = 
     boxes = [b for (b,) in db.execute(select(Item.storage_box).distinct().order_by(Item.storage_box)) if b]
     return render(request, "items_list.html", {
         "user": user, "items": rows, "sets": sets, "boxes": boxes,
-        "f": {"status": status, "set_id": set_id, "box": box, "q": q, "date_from": date_from, "date_to": date_to}})
+        "f": {"status": status, "set_id": set_id, "box": box, "q": q, "date_from": date_from, "date_to": date_to,
+              "category": category, "fmt": fmt}})
 
 
 # ---- 入荷登録（F0-1 / F6-3） ----
 
 @router.get("/intake")
-def intake_page(request: Request, cert: str = "", done: int | None = None, user: User = Depends(current_user),
-                db: Session = Depends(get_db)):
+def intake_page(request: Request, cert: str = "", done: int | None = None, cat: str = "",
+                user: User = Depends(current_user), db: Session = Depends(get_db)):
     last = db.get(Item, done) if done else None
-    return render(request, "intake.html", {"user": user, "cert": cert, "last": last,
-                                           "today": date.today().isoformat()})
+    return render(request, "intake.html", _intake_ctx(db, user, cert=cert, last=last,
+                                                       cat=cat or (last.category if last else "")))
+
+
+def _intake_ctx(db: Session, user: User, **kw) -> dict:
+    return {"user": user, "today": date.today().isoformat(), "Category": Category, "LF": LF,
+            "conditions": get_setting(db, "raw_conditions") or [],
+            "default_formats": get_setting(db, "default_format_by_category") or {}, **kw}
 
 
 @router.get("/api/lookup")
@@ -78,8 +93,18 @@ def _cand(c) -> dict:
 
 
 @router.get("/api/catalog/search")
-def api_catalog_search(q: str = "", user: User = Depends(current_user), db: Session = Depends(get_db)):
+def api_catalog_search(q: str = "", number: str = "", set: str = "", user: User = Depends(current_user),
+                       db: Session = Depends(get_db)):
+    """q：カード名などの部分一致／number：型番（「201」「201/165」）で検索。set でセットを絞り込む。"""
+    if number:
+        return {"candidates": [_cand(c) for c in cardinfo.search_by_number(db, number, set)],
+                "number": cardinfo.normalize_card_number(number)}
     return {"candidates": [_cand(c) for c in cardinfo.candidates(db, q)]}
+
+
+@router.get("/api/catalog/sets")
+def api_catalog_sets(q: str = "", user: User = Depends(current_user), db: Session = Depends(get_db)):
+    return {"sets": cardinfo.search_sets(db, q)}
 
 
 @router.post("/intake")
@@ -94,11 +119,11 @@ async def intake_submit(request: Request, user: User = Depends(current_user), db
         ex = getattr(e, "existing_item_id", None)
         if ex:
             return to(f"/items/{ex}")
-        return render(request, "intake.html", {"user": user, "cert": form.get("cert_number", ""), "form": form,
-                                               "today": date.today().isoformat(),
-                                               "flashes": request.session.pop("flash", [])}, 400)
-    flash(request, f"登録しました：cert {item.cert_number}（在庫ID {item.id}）")
-    return to(f"/intake?done={item.id}")
+        return render(request, "intake.html", _intake_ctx(db, user, cert=form.get("cert_number", ""), form=form,
+                                                           cat=form.get("category", ""),
+                                                           flashes=request.session.pop("flash", [])), 400)
+    flash(request, f"登録しました：{item.category_label} {item.key_label}（{item.format_label}）")
+    return to(f"/intake?done={item.id}&cat={item.category}")
 
 
 # ---- 在庫詳細 ----
@@ -119,7 +144,9 @@ def item_detail(item_id: int, request: Request, user: User = Depends(current_use
         "show_sensitive": item_svc.can_see_purchase_price(db, user, item),
         "quote": pricing.latest_approved(db, item), "draft": listing_svc.current_draft(db, item),
         "active_listing": next((x for x in listings if x.status == "active"), None),
-        "IS": IS, "users": {u.id: u for u in db.scalars(select(User))}})
+        "IS": IS, "LF": LF, "users": {u.id: u for u in db.scalars(select(User))},
+        "condition": listing_svc.raw_condition(db, item.condition),
+        "conditions": get_setting(db, "raw_conditions") or []})
 
 
 @router.post("/items/{item_id}/edit")
@@ -157,6 +184,16 @@ def item_rollback(item_id: int, request: Request, to_status: str = Form(...), re
     return to(f"/items/{item.id}")
 
 
+@router.post("/items/{item_id}/format")
+def item_format(item_id: int, request: Request, listing_format: str = Form(...), version: str = Form(""),
+                user: User = Depends(current_user), db: Session = Depends(get_db)):
+    item = item_svc.get_item(db, item_id)
+    item_svc.set_listing_format(db, user, item, listing_format, form_int(version))
+    db.commit()
+    flash(request, f"出品形式を「{LF.LABELS[listing_format]}」に変更しました")
+    return back(request, f"/items/{item.id}")
+
+
 @router.post("/comments")
 def add_comment(request: Request, target_type: str = Form(...), target_id: int = Form(...),
                 body: str = Form(...), user: User = Depends(current_user), db: Session = Depends(get_db)):
@@ -176,19 +213,24 @@ def add_comment(request: Request, target_type: str = Form(...), target_id: int =
 # ---- 撮影（F0-2 / F6-4） ----
 
 @router.get("/photos")
-def photo_queue(request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    intake = db.scalars(select(Item).where(Item.status == IS.INTAKE).order_by(Item.id)).all()
-    retake = db.scalars(select(Item).where(Item.status.in_([IS.PHOTOGRAPHED, IS.PRICED, IS.READY]))
+def photo_queue(request: Request, category: str = "", user: User = Depends(current_user),
+                db: Session = Depends(get_db)):
+    def q(stmt):
+        return stmt.where(Item.category == category) if category else stmt
+    intake = db.scalars(q(select(Item).where(Item.status == IS.INTAKE)).order_by(Item.id)).all()
+    retake = db.scalars(q(select(Item).where(Item.status.in_([IS.PHOTOGRAPHED, IS.PRICED, IS.READY])))
                         .order_by(Item.id.desc()).limit(50)).all()
-    return render(request, "photo_queue.html", {"user": user, "intake": intake, "retake": retake})
+    counts = dict(db.execute(select(Item.category, func.count()).where(Item.status == IS.INTAKE)
+                             .group_by(Item.category)).all())
+    return render(request, "photo_queue.html", {"user": user, "intake": intake, "retake": retake,
+                                                "category": category, "Category": Category, "counts": counts})
 
 
 @router.get("/photos/scan")
 def photo_scan(request: Request, cert: str = "", user: User = Depends(current_user), db: Session = Depends(get_db)):
-    c = cardinfo.normalize_cert(cert)
-    item = item_svc.find_by_cert(db, c) if c else None
+    item = item_svc.find_by_key(db, cert)
     if not item:
-        flash(request, f"cert {c or cert} の在庫が見つかりません。先に入荷登録してください", "error")
+        flash(request, f"{cert} の在庫が見つかりません（cert番号またはSKU）。先に入荷登録してください", "error")
         return to("/photos")
     return to(f"/photos/{item.id}")
 
@@ -196,10 +238,13 @@ def photo_scan(request: Request, cert: str = "", user: User = Depends(current_us
 @router.get("/photos/{item_id}")
 def photo_shoot(item_id: int, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
     item = item_svc.get_item(db, item_id)
-    nxt = db.scalar(select(Item).where(Item.status == IS.INTAKE, Item.id != item.id, Item.id > item.id)
-                    .order_by(Item.id).limit(1)) or db.scalar(
-        select(Item).where(Item.status == IS.INTAKE, Item.id != item.id).order_by(Item.id).limit(1))
-    return render(request, "photo_shoot.html", {"user": user, "item": item, "next_item": nxt})
+    # 次のレコードは同じ区分の未撮影から（区分ごとに撮影台の段取りが違うため）
+    same = select(Item).where(Item.status == IS.INTAKE, Item.id != item.id, Item.category == item.category)
+    nxt = db.scalar(same.where(Item.id > item.id).order_by(Item.id).limit(1)) or db.scalar(
+        same.order_by(Item.id).limit(1))
+    labels = {"front": "表（必須）", "back": "裏（必須）", **Category.PHOTO_LABELS.get(item.category, {})}
+    slots = [(k, labels[k], k in item.required_photos()) for k in ("front", "back")]
+    return render(request, "photo_shoot.html", {"user": user, "item": item, "next_item": nxt, "slots": slots})
 
 
 def _photo_json(p: Photo) -> dict:

@@ -40,7 +40,10 @@
   'tracking_regex': '追跡番号の形式（正規表現）',
   'price_rule': '価格ルール',
   'fees': '手数料率・費用（損益分岐・粗利の計算）',
-  'listing_defaults': '出品の固定値（カテゴリ・ビジネスポリシー名など）',
+  'listing_defaults': '出品の固定値（ビジネスポリシー名・発送元など）',
+  'ebay_categories': '区分ごとの eBay カテゴリID・コンディションID（※Seller Hub のテンプレートで要確認）',
+  'raw_conditions': 'シングル（未鑑定）の状態の選択肢と eBay の Card Condition ID（※要確認）',
+  'default_format_by_category': '区分ごとの既定の出品形式（fixed＝通常出品／auction＝オークション）',
   'stale_days': '滞留とみなす日数'} %}
 {% for key, val in json_values.items() %}
 <form class="card" method="post" action="/settings/json/{{ key }}" id="{{ key }}">
@@ -51,14 +54,21 @@
 {% endfor %}
 
 <div id="templates">
-<h2>出品テンプレート</h2>
-<p class="small muted">Jinja2 形式。使える変数：cert_number, model_id, card_name_jp, card_name_en, set_id, set_name, card_number, grader, grader_full, grade, year, population</p>
-{% for key, t in templates.items() %}
-<form class="card" method="post" action="/settings/template/{{ key }}">
-  <h3 style="margin-top:0">{{ {'title':'タイトル（80文字以内に切り詰め）','description':'説明文（HTML）','item_specifics':'Item Specifics（JSON）'}[key] }} <span class="small muted">v{{ t.version }}</span></h3>
-  <textarea name="body" rows="{{ 3 if key == 'title' else 14 }}">{{ t.body }}</textarea>
+<h2>出品テンプレート（区分ごと）</h2>
+<p class="small muted">Jinja2 形式。使える変数：sku, cert_number, model_id, card_name_jp, card_name_en, set_id, set_name, card_number,
+grader, grader_full, grade, population, condition_label, condition_short, quantity, memo</p>
+<div class="tabs">{% for c in Category.ALL %}<a class="tab" href="#tpl-{{ c }}">{{ Category.LABELS[c] }}</a>{% endfor %}</div>
+{% for cat, parts in templates.items() %}
+<div id="tpl-{{ cat }}">
+<h3>{{ Category.LABELS[cat] }}</h3>
+{% for part, t in parts.items() %}
+<form class="card" method="post" action="/settings/template/{{ t.key }}">
+  <h4 style="margin:0 0 6px">{{ part_labels[part] }} <span class="small muted">v{{ t.version }}</span></h4>
+  <textarea name="body" rows="{{ 3 if part == 'title' else 12 }}">{{ t.body }}</textarea>
   <div class="actions"><button class="primary">保存</button></div>
 </form>
+{% endfor %}
+</div>
 {% endfor %}
 </div>
 {% endblock %}

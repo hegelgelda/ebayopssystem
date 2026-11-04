@@ -25,13 +25,23 @@
   <a class="stat" href="/items?status=LISTED"><b>{{ counts.LISTED }}</b><span>出品中</span></a>
 </div>
 
+<div class="table-wrap" style="margin-top:10px"><table>
+<tr><th>レーン</th><th>未撮影</th><th>未承認</th><th>出品データ待ち</th><th>出品待ち</th><th>出品中</th></tr>
+{% for f in ['fixed', 'auction'] %}{% set c = lane_counts[f] %}
+<tr><td><span class="badge lane-{{ f }}">{{ LF.LABELS[f] }}</span></td>
+  <td><a href="/photos">{{ c.INTAKE }}</a></td><td><a href="/pricing?lane={{ f }}">{{ c.PHOTOGRAPHED }}</a></td>
+  <td><a href="/listings?lane={{ f }}">{{ c.PRICED }}</a></td><td><a href="/listings?lane={{ f }}">{{ c.READY }}</a></td>
+  <td><a href="/items?status=LISTED&fmt={{ f }}">{{ c.LISTED }}</a></td></tr>
+{% endfor %}
+</table></div>
+
 <h2>今日対応が必要な注文</h2>
 {% if rows %}
 <div class="table-wrap"><table>
 <tr><th>注文</th><th>状態</th><th>期限</th><th class="hide-sm">担当</th></tr>
 {% for o, label, dl in rows %}
 <tr>
-  <td><a href="/orders/{{ o.id }}">#{{ o.id }} {{ o.item.card_name_en or o.item.card_name_jp or o.item.model_id }}</a><div class="small muted">cert {{ o.item.cert_number }} / {{ o.ship_country }}</div></td>
+  <td><a href="/orders/{{ o.id }}">#{{ o.id }} {{ o.item.display_name }}{% if o.quantity > 1 %} ×{{ o.quantity }}{% endif %}</a><div class="small muted">{{ o.item.key_label }} / {{ o.ship_country }}</div></td>
   <td>{{ order_badge(o.status) }}{% if o.active_shipment() and o.active_shipment().ebay_upload_status != 'uploaded' %} <span class="badge warn">eBay未登録</span>{% endif %}</td>
   <td>{% if label %}<div class="small muted">{{ label }}</div>{{ deadline(dl) }}{% else %}—{% endif %}</td>
   <td class="hide-sm">{{ o.assignee.display_name if o.assignee else '—' }}</td>
@@ -61,7 +71,7 @@
 <div class="table-wrap"><table>
 <tr><th>在庫</th><th>状態</th><th>日数</th></tr>
 {% for it, days in stale %}
-<tr><td><a href="/items/{{ it.id }}">cert {{ it.cert_number }} {{ it.card_name_jp or it.card_name_en or it.model_id }}</a></td><td>{{ item_badge(it.status) }}</td><td class="overdue">{{ days }}日</td></tr>
+<tr><td><a href="/items/{{ it.id }}">{{ it.key_label }} {{ it.display_name }}</a></td><td>{{ item_badge(it.status) }}</td><td class="overdue">{{ days }}日</td></tr>
 {% endfor %}
 </table></div>
 {% else %}<p class="muted">滞留している在庫はありません。</p>{% endif %}

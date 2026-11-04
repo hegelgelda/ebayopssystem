@@ -9,7 +9,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import audit
-from app.models import Item, ItemStatus as IS, Listing, MarketPrice, Order, OrderStatus, PriceQuote, User
+from app.models import (
+    Category, Item, ItemStatus as IS, Listing, ListingFormat as LF, MarketPrice, Order, OrderStatus, PriceQuote, User,
+)
 from app.services import fx, states
 from app.services.errors import PermissionDenied, ServiceError, check_version
 from app.settings_store import get_setting, rule_version
@@ -106,41 +108,59 @@ def _round(v: Decimal | None, step: int) -> Decimal | None:
 
 
 def suggest(db: Session, item: Item, refs: dict[str, Any]) -> tuple[Decimal | None, Decimal | None, str]:
-    """(開始価格, 即決価格, 説明)。初期ルール：開始＝損益分岐、即決＝海外水準×係数。再出品は前回 -5%。"""
+    """(開始価格／販売価格, 即決価格, 説明)。
+
+    オークション：開始＝損益分岐、即決＝海外水準×係数。
+    通常出品    ：販売価格＝海外水準×係数（損益分岐を下回るなら損益分岐）、即決価格欄は使わない。
+    PSA以外は参考値（PSA10の相場）を使わず、損益分岐だけを案にする。再出品は前回 -5%。
+    """
     rule = get_setting(db, "price_rule")
     step = rule.get("round_to", 1)
+    fixed = item.listing_format == LF.FIXED
+    be = _dec(refs.get("breakeven_usd"))
     prev = refs.get("previous")
     if item.relist_count and prev and prev.get("start"):
         disc = Decimal(str(1 - float(rule.get("relist_discount", 0.05))))
         start = _round(Decimal(prev["start"]) * disc, step)
-        bin_ = _round(Decimal(prev["bin"]) * disc, step) if prev.get("bin") else None
-        be = _dec(refs.get("breakeven_usd"))
+        bin_ = None if fixed else (_round(Decimal(prev["bin"]) * disc, step) if prev.get("bin") else None)
         note = f"再出品{item.relist_count}回目：前回価格の{int(float(rule.get('relist_discount', 0.05)) * 100)}%引き"
         if be is not None and start is not None and start < be:
             note += f"（損益分岐 ${be} を下回ります）"
         return start, bin_, note
-    start = _dec(refs.get("breakeven_usd")) if rule.get("start", "breakeven") == "breakeven" else None
+
     base = None
     base_label = ""
-    for src in rule.get("bin_sources", []):
-        key = {"pricecharting_psa10": "pricecharting.psa10", "courtyard_p2p": "courtyard_p2p.median",
-               "courtyard_buyback": "courtyard_buyback.median"}.get(src, src)
-        row = refs["values"].get(key)
-        if row and row.get("usd"):
-            base = Decimal(row["usd"])
-            base_label = row["label"]
-            break
-    bin_ = None
+    if item.category == Category.PSA:
+        for src in rule.get("bin_sources", []):
+            key = {"pricecharting_psa10": "pricecharting.psa10", "courtyard_p2p": "courtyard_p2p.median",
+                   "courtyard_buyback": "courtyard_buyback.median"}.get(src, src)
+            row = refs["values"].get(key)
+            if row and row.get("usd"):
+                base = Decimal(row["usd"])
+                base_label = row["label"]
+                break
+    coef = Decimal(str(rule.get("bin_coefficient", 1.2)))
+    market = _round(base * coef, step) if base is not None else None
+    no_market = ("PSA以外は相場の参考値を使わないため" if item.category != Category.PSA
+                 else "海外水準の参考値がないため")
+
+    if fixed:
+        if market is None:
+            return _round(be, step), None, f"販売価格＝損益分岐価格（{no_market}）"
+        if be is not None and market < be:
+            return _round(be, step), None, f"販売価格＝損益分岐価格（{base_label} ${base} × {coef} が損益分岐を下回るため）"
+        return market, None, f"販売価格＝{base_label} ${base} × {coef}"
+
+    start = be if rule.get("start", "breakeven") == "breakeven" else None
     note = "開始価格＝損益分岐価格"
-    if base is not None:
-        coef = Decimal(str(rule.get("bin_coefficient", 1.2)))
-        bin_ = _round(base * coef, step)
+    bin_ = market
+    if market is not None:
         note += f"、即決価格＝{base_label} ${base} × {coef}"
-        if start is not None and bin_ is not None and bin_ <= start:
+        if start is not None and bin_ <= start:
             note += "（即決案が開始価格以下のため即決なし）"
             bin_ = None
     else:
-        note += "、海外水準の参考値がないため即決案なし"
+        note += f"、{no_market}即決案なし"
     return _round(start, step), bin_, note
 
 
@@ -159,8 +179,9 @@ def ensure_open_quote(db: Session, item: Item) -> PriceQuote:
     refs = reference_values(db, item)
     start, bin_, note = suggest(db, item, refs)
     if q is None:
-        q = PriceQuote(item_id=item.id, format=get_setting(db, "price_rule").get("default_format", "auction"))
+        q = PriceQuote(item_id=item.id)
         db.add(q)
+    q.format = item.listing_format
     q.snapshot_json = {**refs, "rule_note": note}
     q.suggested_start, q.suggested_bin = start, bin_
     q.rule_version = rule_version(db)
@@ -168,42 +189,46 @@ def ensure_open_quote(db: Session, item: Item) -> PriceQuote:
     return q
 
 
-def pending_items(db: Session) -> list[Item]:
-    """承認待ち：撮影済み、または再出品で新しい価格案が出ている価格確定の在庫。"""
+def pending_items(db: Session, listing_format: str | None = None) -> list[Item]:
+    """承認待ち：撮影済み、または再出品・形式変更で新しい価格案が出ている価格確定の在庫。レーンで絞り込める。"""
     sub = select(PriceQuote.item_id).where(PriceQuote.approved_at.is_(None))
-    return list(db.scalars(select(Item).where(
-        (Item.status == IS.PHOTOGRAPHED) | ((Item.status == IS.PRICED) & Item.id.in_(sub)))
-        .order_by(Item.status_changed_at)).all())
+    stmt = select(Item).where((Item.status == IS.PHOTOGRAPHED) | ((Item.status == IS.PRICED) & Item.id.in_(sub)))
+    if listing_format:
+        stmt = stmt.where(Item.listing_format == listing_format)
+    return list(db.scalars(stmt.order_by(Item.status_changed_at)).all())
 
 
-def propose(db: Session, user: User, item: Item, start, bin_, fmt: str, note: str | None) -> PriceQuote:
+def propose(db: Session, user: User, item: Item, start, bin_, fmt: str | None = None,
+            note: str | None = None) -> PriceQuote:
+    """形式（レーン）は在庫の listing_format に従う。fmt は互換のため受け取るだけ。"""
     if item.status not in (IS.PHOTOGRAPHED, IS.PRICED):
         raise ServiceError("撮影済み・価格確定の在庫にのみ価格を提案できます")
     q = ensure_open_quote(db, item)
-    q.proposed_start, q.proposed_bin = _dec(start), _dec(bin_)
-    q.format = fmt if fmt in ("auction", "fixed") else "auction"
+    fixed = item.listing_format == LF.FIXED
+    q.proposed_start = _dec(start)
+    q.proposed_bin = None if fixed else _dec(bin_)
     q.proposed_by, q.proposed_at, q.proposal_note = user.id, utcnow(), note
     if q.proposed_start is None or q.proposed_start <= 0:
-        raise ServiceError("開始価格を入力してください")
+        raise ServiceError("販売価格を入力してください" if fixed else "開始価格を入力してください")
     audit.log(db, audit.Actor.user(user), "item", item.id, "price.propose",
               after={"start": q.proposed_start, "bin": q.proposed_bin, "format": q.format, "note": note})
     return q
 
 
-def approve(db: Session, user: User, item: Item, start, bin_, fmt: str, version: int | None) -> PriceQuote:
+def approve(db: Session, user: User, item: Item, start, bin_, fmt: str | None = None,
+            version: int | None = None) -> PriceQuote:
     if user.level < 2:
         raise PermissionDenied("価格の承認はLv2のみ可能です")
     check_version(item, version)
     if item.status not in (IS.PHOTOGRAPHED, IS.PRICED):
         raise ServiceError("撮影済みの在庫（または再出品候補）のみ承認できます")
     q = ensure_open_quote(db, item)  # 承認時点の参考値をスナップショットとして保存
+    fmt = item.listing_format
     q.approved_start, q.approved_bin = _dec(start), _dec(bin_)
     if q.approved_start is None or q.approved_start <= 0:
-        raise ServiceError("開始価格を入力してください")
-    fmt = fmt if fmt in ("auction", "fixed") else "auction"
-    if fmt == "fixed":
-        if q.approved_bin is None:
-            q.approved_bin = q.approved_start
+        raise ServiceError("販売価格を入力してください" if fmt == LF.FIXED else "開始価格を入力してください")
+    if fmt == LF.FIXED:
+        q.approved_bin = q.approved_start  # 通常出品は販売価格のみ
     elif q.approved_bin is not None and q.approved_bin <= q.approved_start:
         raise ServiceError("即決価格は開始価格より高くしてください")
     q.format = fmt

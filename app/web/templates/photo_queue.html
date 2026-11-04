@@ -1,28 +1,33 @@
 {% extends "base.html" %}
-{% from "macros.html" import item_badge, thumb %}
+{% from "macros.html" import item_badge, thumb, cat_badge, fmt_badge %}
 {% block title %}撮影{% endblock %}
 {% block content %}
 <h1>撮影</h1>
+<div class="tabs">
+  <a class="tab {% if not category %}active{% endif %}" href="/photos">すべて <span class="count">{{ counts.values()|sum }}</span></a>
+  {% for c in Category.ALL %}<a class="tab {% if category == c %}active{% endif %}" href="/photos?category={{ c }}">{{ Category.LABELS[c] }} <span class="count">{{ counts.get(c, 0) }}</span></a>{% endfor %}
+</div>
 <div class="card">
   <video id="scanner" playsinline muted hidden></video>
-  <button type="button" class="primary big" id="scan-btn">📷 cert番号を読み取って開く</button>
+  <button type="button" class="primary big" id="scan-btn">📷 PSAラベルを読み取って開く</button>
   <form method="get" action="/photos/scan" class="row" style="margin-top:8px">
-    <div><input type="text" name="cert" id="cert" inputmode="numeric" placeholder="cert番号を手入力"></div>
+    <div><input type="text" name="cert" id="cert" placeholder="cert番号 または SKU（例 S-00012）"></div>
     <div style="flex:0 0 auto"><button>開く</button></div>
   </form>
 </div>
 <h2>未撮影（入荷済み）{{ intake|length }}件</h2>
 <div class="table-wrap"><table>
 {% for it in intake %}
-<tr><td><a href="/photos/{{ it.id }}">cert {{ it.cert_number }}</a> {{ it.card_name_jp or it.card_name_en or it.model_id }}
-  <div class="small muted">{{ it.storage_box }}{% if it.storage_slot %}-{{ it.storage_slot }}{% endif %} ・ 表{{ '✓' if it.photo('front') else '—' }} 裏{{ '✓' if it.photo('back') else '—' }}</div></td>
+<tr><td><a href="/photos/{{ it.id }}">{{ it.key_label }}</a> {{ cat_badge(it) }} {{ fmt_badge(it.listing_format) }}<br>{{ it.display_name }}{% if it.quantity > 1 %} ×{{ it.quantity }}{% endif %}
+  <div class="small muted">{{ it.storage_box }}{% if it.storage_slot %}-{{ it.storage_slot }}{% endif %}
+    {% for k in it.required_photos() %} ・ {{ {'front':'表','back':'裏'}[k] if it.category != 'bulk' else '全体' }}{{ '✓' if it.photo(k) else '—' }}{% endfor %}</div></td>
   <td style="width:1%"><a class="btn primary" href="/photos/{{ it.id }}">撮影</a></td></tr>
 {% else %}<tr><td class="muted">未撮影の在庫はありません。</td></tr>{% endfor %}
 </table></div>
 <details style="margin-top:16px"><summary>撮り直し（撮影済み〜出品準備完了）</summary>
 <div class="table-wrap" style="margin-top:8px"><table>
 {% for it in retake %}
-<tr><td>{{ thumb(it) }}</td><td><a href="/photos/{{ it.id }}">cert {{ it.cert_number }}</a> {{ it.card_name_jp or it.card_name_en }}</td><td>{{ item_badge(it.status) }}</td></tr>
+<tr><td>{{ thumb(it) }}</td><td><a href="/photos/{{ it.id }}">{{ it.key_label }}</a> {{ cat_badge(it) }} {{ it.display_name }}</td><td>{{ item_badge(it.status) }}</td></tr>
 {% endfor %}
 </table></div></details>
 {% endblock %}

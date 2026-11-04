@@ -78,9 +78,9 @@ def test_audit_log_append_only(db, users):
 
 def test_purchase_price_hidden_from_other_lv1(app, admin_client, users, db):
     from tests.conftest import make_client
-    from tests.test_flow import register
+    from tests.test_flow import done_id, register
     r = register(admin_client, cert="55556666", purchase_price_jpy="12345")
-    item_id = int(r.headers["location"].split("=")[1])
+    item_id = done_id(r)
     staff = make_client(app, users["staff"].discord_user_id)
     page = staff.get(f"/items/{item_id}")
     assert "12345" not in page.text
@@ -94,9 +94,9 @@ def test_purchase_price_hidden_from_other_lv1(app, admin_client, users, db):
 
 
 def test_optimistic_lock(admin_client, db, users):
-    from tests.test_flow import register
+    from tests.test_flow import done_id, register
     r = register(admin_client, cert="77778888")
-    item_id = int(r.headers["location"].split("=")[1])
+    item_id = done_id(r)
     r1 = admin_client.post(f"/items/{item_id}/edit", data={"version": "1", "memo": "A"})
     assert r1.status_code == 303
     r2 = admin_client.post(f"/items/{item_id}/edit", data={"version": "1", "memo": "B"},

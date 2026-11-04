@@ -1,23 +1,37 @@
 {% extends "base.html" %}
-{% from "macros.html" import item_badge, version_field %}
+{% from "macros.html" import item_badge, version_field, cat_badge, fmt_badge, lane_tabs %}
 {% block title %}価格承認{% endblock %}
 {% block content %}
-<h1>価格承認 <span class="muted small">承認待ち {{ queue|length }}件</span></h1>
+<h1>価格承認</h1>
+{{ lane_tabs('/pricing', lane, lane_counts) }}
+<div class="lane-banner lane-{{ lane }}">{{ '通常出品（固定価格）' if lane == 'fixed' else 'オークション' }}の承認待ち {{ queue|length }}件</div>
 {% if queue %}
-<div class="actions" style="margin-bottom:12px">{% for it in queue %}<a class="btn {% if item and it.id == item.id %}primary{% endif %}" href="/pricing/{{ it.id }}">{{ it.cert_number }}{% if it.relist_count %}（再）{% endif %}</a>{% endfor %}</div>
+<div class="actions" style="margin-bottom:12px">{% for it in queue %}<a class="btn {% if item and it.id == item.id %}primary{% endif %}" href="/pricing/{{ it.id }}">{{ it.key_label }}{% if it.relist_count %}（再）{% endif %}</a>{% endfor %}</div>
 {% endif %}
 
 {% if not item %}
-<p class="muted">承認待ちの在庫はありません。</p>
+<p class="muted">このレーンの承認待ちはありません。</p>
 {% else %}
+{% set fixed = item.listing_format == 'fixed' %}
 <div class="grid" style="grid-template-columns:minmax(260px,1fr) minmax(320px,2fr)">
   <div class="card">
-    <h2 style="margin-top:0">cert {{ item.cert_number }} {{ item_badge(item.status) }}</h2>
-    <p>{{ item.card_name_jp or '' }}<br>{{ item.card_name_en or '' }}<br><span class="muted small">{{ item.model_id }} / {{ item.grader }} {{ item.grade }}{% if item.psa_population %} / Pop {{ item.psa_population }}{% endif %}</span></p>
+    <h2 style="margin-top:0">{{ item.key_label }} {{ item_badge(item.status) }}</h2>
+    <p>{{ cat_badge(item) }} {{ fmt_badge(item.listing_format) }}</p>
+    <p>{{ item.card_name_jp or '' }}<br>{{ item.card_name_en or '' }}<br>
+      <span class="muted small">{% if item.model_id %}{{ item.model_id }}{% else %}{{ item.set_name or '' }}{% endif %}
+      {% if item.category == 'psa' %} / {{ item.grader }} {{ item.grade }}{% if item.psa_population %} / Pop {{ item.psa_population }}{% endif %}{% endif %}
+      {% if item.condition %} / 状態 {{ item.condition|upper }}{% endif %}
+      {% if item.quantity > 1 %} / 数量 {{ item.remaining }}（全{{ item.quantity }}）{% endif %}</span></p>
     <div class="photos" style="grid-template-columns:1fr 1fr">
       {% for p in item.active_photos() if p.kind in ('front','back') %}{% if p.processed_path %}<a href="/img/{{ p.processed_path }}" target="_blank"><img src="/img/{{ p.processed_path }}"></a>{% endif %}{% endfor %}
     </div>
     <p><a href="/items/{{ item.id }}">在庫詳細</a></p>
+    {% if item.status in ('PHOTOGRAPHED','PRICED') %}
+    <form method="post" action="/items/{{ item.id }}/format" class="small">{{ version_field(item) }}
+      <input type="hidden" name="listing_format" value="{{ 'auction' if fixed else 'fixed' }}">
+      <button class="small" {% if fixed and item.remaining > 1 %}disabled title="数量が2以上なのでオークションにできません"{% endif %}>{{ 'オークション' if fixed else '通常出品' }}に移す</button>
+    </form>
+    {% endif %}
   </div>
 
   <div>
@@ -25,6 +39,7 @@
   {% set s = quote.snapshot_json %}
   <div class="card">
     <h2 style="margin-top:0">参考値 <span class="small muted">USD/JPY {{ s.fx.usdjpy }}（{{ s.fx.source }}）</span></h2>
+    {% if item.category != 'psa' %}<p class="small muted">※ 下の相場は PSA10 の値です（{{ item.category_label }}の価格案には使いません）。</p>{% endif %}
     <div class="table-wrap"><table>
       <tr><th>情報源</th><th>値</th><th>USD</th><th>円</th><th>件数</th><th>時点</th></tr>
       {% for r in s.rows %}
@@ -34,20 +49,24 @@
         {% for h in s.history.sold %}{{ h.amount|money(h.currency) }}（{{ h.date }}）{% if not loop.last %}、{% endif %}{% else %}落札実績なし{% endfor %}
         ・ 不落札 {{ s.history.unsold_count }}回</td></tr>
       {% if show_price %}
-      <tr><td class="small">仕入値</td><td colspan="5">{{ s.purchase_price_jpy|money('JPY') }}</td></tr>
+      <tr><td class="small">仕入値{% if item.quantity > 1 %}（1個あたり）{% endif %}</td><td colspan="5">{{ s.purchase_price_jpy|money('JPY') }}</td></tr>
       {% endif %}
-      <tr><td class="small">損益分岐価格</td><td colspan="5"><b>{{ s.breakeven_usd|money if s.breakeven_usd else '—' }}</b>
+      <tr><td class="small">損益分岐価格{% if item.quantity > 1 %}（1個あたり）{% endif %}</td><td colspan="5"><b>{{ s.breakeven_usd|money if s.breakeven_usd else '—' }}</b>
         <span class="small muted">（手数料 {{ ((s.fees.ebay_final_value_rate + s.fees.international_fee_rate) * 100)|round(2) }}% + ${{ s.fees.per_order_fee_usd }}、関税 {{ (s.fees.duty_rate * 100)|round(1) }}%、送料 ¥{{ s.fees.shipping_cost_jpy }}）</span></td></tr>
-      {% if s.previous %}<tr><td class="small">前回の承認価格</td><td colspan="5">開始 {{ s.previous.start|money }} / 即決 {{ s.previous.bin|money if s.previous.bin else '—' }} ・ 不落札 {{ s.relist_count }}回</td></tr>{% endif %}
+      {% if s.previous %}<tr><td class="small">前回の承認価格</td><td colspan="5">{{ s.previous.start|money }}{% if s.previous.bin and s.previous.bin != s.previous.start %} / 即決 {{ s.previous.bin|money }}{% endif %} ・ 不落札・売れ残り {{ s.relist_count }}回</td></tr>{% endif %}
     </table></div>
   </div>
 
   <div class="card">
     <h2 style="margin-top:0">ツール案</h2>
+    {% if fixed %}
+    <p><b>販売価格 {{ quote.suggested_start|money }}</b>{% if item.remaining > 1 %} <span class="muted">× {{ item.remaining }}個</span>{% endif %}</p>
+    {% else %}
     <p><b>開始 {{ quote.suggested_start|money }}</b> ・ <b>即決 {{ quote.suggested_bin|money if quote.suggested_bin else 'なし' }}</b></p>
+    {% endif %}
     <p class="small muted">{{ s.rule_note }}（ルール版 {{ quote.rule_version }}）</p>
     {% if quote.proposed_start %}
-    <p>提案：開始 {{ quote.proposed_start|money }} / 即決 {{ quote.proposed_bin|money if quote.proposed_bin else 'なし' }} / {{ 'オークション' if quote.format == 'auction' else '即決' }}
+    <p>提案：{% if fixed %}販売価格 {{ quote.proposed_start|money }}{% else %}開始 {{ quote.proposed_start|money }} / 即決 {{ quote.proposed_bin|money if quote.proposed_bin else 'なし' }}{% endif %}
       <span class="small muted">— {{ users[quote.proposed_by].display_name if quote.proposed_by in users else '' }} {{ quote.proposed_at|jst }}</span>
       {% if quote.proposal_note %}<br><span class="small">{{ quote.proposal_note }}</span>{% endif %}</p>
     {% endif %}
@@ -57,12 +76,15 @@
   {% set dbin = quote.proposed_bin if quote.proposed_start else quote.suggested_bin %}
   {% if user.level >= 2 %}
   <form class="card" method="post" action="/pricing/{{ item.id }}/approve">
-    <h2 style="margin-top:0">承認（Lv2）</h2>
+    <h2 style="margin-top:0">承認（{{ item.format_label }}）</h2>
     {{ version_field(item) }}
     <div class="row">
-      <div><label>形式</label><select name="format"><option value="auction" {% if quote.format == 'auction' %}selected{% endif %}>オークション（即決付き可）</option><option value="fixed" {% if quote.format == 'fixed' %}selected{% endif %}>即決</option></select></div>
+      {% if fixed %}
+      <div><label>販売価格（USD）{% if item.remaining > 1 %}・1個あたり{% endif %}</label><input type="text" name="start" inputmode="decimal" value="{{ dstart if dstart is not none else '' }}" required></div>
+      {% else %}
       <div><label>開始価格（USD）</label><input type="text" name="start" inputmode="decimal" value="{{ dstart if dstart is not none else '' }}" required></div>
       <div><label>即決価格（USD・任意）</label><input type="text" name="bin" inputmode="decimal" value="{{ dbin if dbin is not none else '' }}"></div>
+      {% endif %}
     </div>
     {% if not quote.proposed_by or quote.proposed_by == user.id %}<p class="small muted">提案者と承認者が同じため「自己承認」として記録されます。</p>{% endif %}
     <div class="actions"><button class="primary big">承認して次へ</button></div>
@@ -72,16 +94,15 @@
   <details class="card" {% if user.level < 2 %}open{% endif %}><summary>修正案を提案する</summary>
   <form method="post" action="/pricing/{{ item.id }}/propose">
     <div class="row">
-      <div><label>形式</label><select name="format"><option value="auction">オークション</option><option value="fixed">即決</option></select></div>
-      <div><label>開始価格（USD）</label><input type="text" name="start" inputmode="decimal" value="{{ dstart if dstart is not none else '' }}" required></div>
-      <div><label>即決価格（USD・任意）</label><input type="text" name="bin" inputmode="decimal" value="{{ dbin if dbin is not none else '' }}"></div>
+      <div><label>{{ '販売価格' if fixed else '開始価格' }}（USD）</label><input type="text" name="start" inputmode="decimal" value="{{ dstart if dstart is not none else '' }}" required></div>
+      {% if not fixed %}<div><label>即決価格（USD・任意）</label><input type="text" name="bin" inputmode="decimal" value="{{ dbin if dbin is not none else '' }}"></div>{% endif %}
     </div>
     <label>コメント</label><input type="text" name="note">
     <div class="actions"><button>提案する</button></div>
   </form></details>
   {% else %}
   <div class="card">
-    {% if approved %}<p>承認済み：開始 {{ approved.approved_start|money }} / 即決 {{ approved.approved_bin|money if approved.approved_bin else 'なし' }}（{{ approved.approved_at|jst }}）{% if approved.self_approved %} <span class="badge">自己承認</span>{% endif %}</p>{% endif %}
+    {% if approved %}<p>承認済み（{{ '通常出品' if approved.format == 'fixed' else 'オークション' }}）：{% if approved.format == 'fixed' %}販売価格 {{ approved.approved_start|money }}{% else %}開始 {{ approved.approved_start|money }} / 即決 {{ approved.approved_bin|money if approved.approved_bin else 'なし' }}{% endif %}（{{ approved.approved_at|jst }}）{% if approved.self_approved %} <span class="badge">自己承認</span>{% endif %}</p>{% endif %}
     <p class="muted">この在庫は価格承認の対象ではありません（{{ ITEM_LABELS[item.status] }}）。</p>
   </div>
   {% endif %}

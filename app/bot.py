@@ -129,7 +129,7 @@ class OpsBot(discord.Client):
             return th, None
         ch = await self._channel("orders")
         it = o.item
-        name = f"#{o.id} {it.card_name_en or it.card_name_jp or it.model_id} cert{it.cert_number}"[:95]
+        name = f"#{o.id} {it.display_name} {it.key_label}"[:95]
         if isinstance(ch, discord.ForumChannel):
             kwargs = {"name": name, "content": first_content}
             if view:

@@ -16,3 +16,20 @@
 {%- endmacro %}
 
 {% macro version_field(obj) -%}<input type="hidden" name="version" value="{{ obj.version }}">{%- endmacro %}
+
+{% macro cat_badge(item) -%}
+<span class="badge cat-{{ item.category }}">{{ item.category_label }}</span>
+{%- endmacro %}
+
+{% macro fmt_badge(fmt) -%}
+<span class="badge lane-{{ fmt }}">{{ '通常出品' if fmt == 'fixed' else 'オークション' }}</span>
+{%- endmacro %}
+
+{# レーン切り替えタブ。counts は {fixed: n, auction: n}（任意） #}
+{% macro lane_tabs(base, lane, counts=None) -%}
+<div class="tabs lane-tabs">
+  {% for f, label in [('fixed', '通常出品'), ('auction', 'オークション')] %}
+  <a class="tab lane-{{ f }} {% if lane == f %}active{% endif %}" href="{{ base }}{{ '&' if '?' in base else '?' }}lane={{ f }}">{{ label }}{% if counts is not none %} <span class="count">{{ counts[f] }}</span>{% endif %}</a>
+  {% endfor %}
+</div>
+{%- endmacro %}

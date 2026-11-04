@@ -20,7 +20,7 @@
 <tr><th>注文</th><th>状態</th><th>金額</th><th class="hide-sm">落札者 / 国</th><th>期限</th><th class="hide-sm">担当</th></tr>
 {% for o in orders %}
 <tr>
-  <td><a href="/orders/{{ o.id }}">#{{ o.id }} {{ o.item.card_name_en or o.item.card_name_jp }}</a><div class="small muted">cert {{ o.item.cert_number }} ・ {{ o.sold_at|jst('%m-%d') }}</div></td>
+  <td><a href="/orders/{{ o.id }}">#{{ o.id }} {{ o.item.display_name }}{% if o.quantity > 1 %} ×{{ o.quantity }}{% endif %}</a><div class="small muted">{{ o.item.key_label }} ・ {{ o.sold_at|jst('%m-%d') }}</div></td>
   <td>{{ order_badge(o.status) }}</td>
   <td>{{ o.total_amount|money(o.currency) }}</td>
   <td class="hide-sm small">{{ o.buyer_username }} / {{ o.ship_country }}</td>

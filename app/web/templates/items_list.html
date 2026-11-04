@@ -1,30 +1,34 @@
 {% extends "base.html" %}
-{% from "macros.html" import item_badge, thumb %}
+{% from "macros.html" import item_badge, thumb, cat_badge, fmt_badge %}
 {% block content %}
 <h1>在庫一覧</h1>
 <form class="card" method="get">
   <div class="row">
     <div><label>状態</label><select name="status"><option value="">すべて</option>
       {% for s, l in ITEM_LABELS.items() %}<option value="{{ s }}" {% if f.status == s %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+    <div><label>区分</label><select name="category"><option value="">すべて</option>
+      {% for c, l in [('psa','PSA鑑定品'),('single','シングル'),('pack','パック'),('box','BOX'),('bulk','バルク')] %}<option value="{{ c }}" {% if f.category == c %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+    <div><label>出品形式</label><select name="fmt"><option value="">すべて</option>
+      <option value="fixed" {% if f.fmt == 'fixed' %}selected{% endif %}>通常出品</option><option value="auction" {% if f.fmt == 'auction' %}selected{% endif %}>オークション</option></select></div>
     <div><label>セット</label><select name="set_id"><option value="">すべて</option>
       {% for s in sets %}<option {% if f.set_id == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
     <div><label>保管ボックス</label><select name="box"><option value="">すべて</option>
       {% for b in boxes %}<option {% if f.box == b %}selected{% endif %}>{{ b }}</option>{% endfor %}</select></div>
     <div><label>登録日（から）</label><input type="date" name="date_from" value="{{ f.date_from }}"></div>
     <div><label>登録日（まで）</label><input type="date" name="date_to" value="{{ f.date_to }}"></div>
-    <div><label>検索</label><input type="search" name="q" value="{{ f.q }}" placeholder="cert番号・カード名・モデルID"></div>
+    <div><label>検索</label><input type="search" name="q" value="{{ f.q }}" placeholder="cert・SKU・カード名・型番"></div>
     <div><button class="primary">絞り込み</button></div>
   </div>
 </form>
 <div id="live" hx-get="" hx-trigger="every 30s" hx-select="#live" hx-swap="outerHTML">
 <p class="muted small">{{ items|length }}件</p>
 <div class="table-wrap"><table>
-<tr><th></th><th>cert / カード</th><th>モデルID</th><th>状態</th><th class="hide-sm">保管場所</th><th class="hide-sm">登録日</th></tr>
+<tr><th></th><th>在庫</th><th>モデルID・数量</th><th>状態</th><th class="hide-sm">保管場所</th><th class="hide-sm">登録日</th></tr>
 {% for it in items %}
 <tr>
   <td>{{ thumb(it) }}</td>
-  <td><a href="/items/{{ it.id }}">{{ it.card_name_jp or it.card_name_en or '（名称未設定）' }}</a><div class="small muted">cert {{ it.cert_number }} / {{ it.grader }} {{ it.grade }}</div></td>
-  <td class="small">{{ it.model_id }}</td>
+  <td><a href="/items/{{ it.id }}">{{ it.display_name or '（名称未設定）' }}</a><div class="small muted">{{ it.key_label }} ・ {{ cat_badge(it) }} {{ fmt_badge(it.listing_format) }}{% if it.category == 'psa' %} {{ it.grader }} {{ it.grade }}{% elif it.condition %} {{ it.condition|upper }}{% endif %}</div></td>
+  <td class="small">{{ it.model_id or '' }}{% if it.quantity > 1 %}<br>残り {{ it.remaining }}/{{ it.quantity }}{% endif %}</td>
   <td>{{ item_badge(it.status) }}{% if it.relist_count %} <span class="badge">再出品{{ it.relist_count }}</span>{% endif %}</td>
   <td class="hide-sm small">{{ it.storage_box }}{% if it.storage_slot %}-{{ it.storage_slot }}{% endif %}</td>
   <td class="hide-sm small">{{ it.created_at|jst('%Y-%m-%d') }}</td>

@@ -80,6 +80,24 @@ DEFAULTS: dict[str, Any] = {
         "currency": "USD",
         "dispatch_time_max": 2,
     },
+    # 区分ごとの既定レーン（入荷画面で変更できる）
+    "default_format_by_category": {"psa": "auction", "single": "fixed", "pack": "fixed", "box": "fixed",
+                                   "bulk": "auction"},
+    # 区分ごとの eBay カテゴリIDとコンディションID（※Seller Hub のテンプレートで要確認）
+    "ebay_categories": {
+        "psa": {"category_id": "183454", "condition_id": "2750"},
+        "single": {"category_id": "183454", "condition_id": "4000"},
+        "pack": {"category_id": "183456", "condition_id": "1000"},
+        "box": {"category_id": "183456", "condition_id": "1000"},
+        "bulk": {"category_id": "183454", "condition_id": "4000"},
+    },
+    # シングル（未鑑定）の状態。ebay_id は Condition Descriptor「Card Condition（40001）」の値（※要確認）
+    "raw_conditions": [
+        {"key": "nm", "label": "Near Mint or Better", "short": "NM", "ebay_id": "400010"},
+        {"key": "ex", "label": "Lightly Played (Excellent)", "short": "LP", "ebay_id": "400011"},
+        {"key": "vg", "label": "Moderately Played (Very Good)", "short": "MP", "ebay_id": "400012"},
+        {"key": "poor", "label": "Heavily Played (Poor)", "short": "HP", "ebay_id": "400013"},
+    ],
     "payment_due_days": 4,
     "ship_business_days": 2,
     "delivered_to_completed_hours": 48,

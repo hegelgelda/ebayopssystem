@@ -1,3 +1,5 @@
+/* hidden 属性は display 指定より優先する */
+[hidden] { display: none !important; }
 :root {
   --bg: #f6f7f9; --fg: #1d2330; --muted: #6b7280; --card: #fff; --line: #e3e6eb;
   --accent: #2457d6; --accent-fg: #fff; --ok: #157347; --warn: #b26b00; --err: #b42318;
@@ -79,3 +81,30 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
   th, td { padding: 6px; }
   .hide-sm { display: none; }
 }
+
+/* 区分・レーン */
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 14px; }
+.tab { padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--fg);
+  text-decoration: none; cursor: pointer; font-size: 15px; white-space: nowrap; }
+.tab.active { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.tab .count { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--bg); color: var(--fg);
+  font-size: 12px; text-align: center; margin-left: 4px; }
+.lane-tabs .tab.lane-fixed.active { background: #157347; border-color: #157347; color: #fff; }
+.lane-tabs .tab.lane-auction.active { background: #8a3ffc; border-color: #8a3ffc; color: #fff; }
+.badge.lane-fixed { background: #e7f6ec; color: #157347; border-color: transparent; }
+.badge.lane-auction { background: #f1e8ff; color: #6929c4; border-color: transparent; }
+@media (prefers-color-scheme: dark) {
+  .badge.lane-fixed { background: #12301f; color: #6fdc9a; }
+  .badge.lane-auction { background: #2a1847; color: #c6a6ff; }
+}
+.lane-banner { padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; font-weight: 600; }
+.lane-banner.lane-fixed { background: var(--ok-bg); color: var(--ok); }
+.lane-banner.lane-auction { background: #f1e8ff; color: #6929c4; }
+.cand-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.cand-list button { text-align: left; }
+.cand-list button.selected { border-color: var(--accent); background: var(--bg); }
+.seg { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg label { flex: 1; margin: 0; padding: 10px; text-align: center; cursor: pointer; color: var(--fg); background: var(--card); font-size: 15px; }
+.seg input { display: none; }
+.seg label:has(input:checked) { background: var(--accent); color: var(--accent-fg); }
+.seg label:has(input:disabled) { opacity: .4; cursor: not-allowed; }

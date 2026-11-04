@@ -1,38 +1,153 @@
 {
-  "_comment": "eBay Seller Hub 一括出品（ファイルアップロード／File Exchange形式）の列定義。Seller Hubから最新のテンプレート（トレーディングカードカテゴリ）をダウンロードして列名を確認し、ここを合わせて変更する。value は Jinja2 式（使える変数：draft, item, specs, images, defaults, grader_id, grade_id）。",
+  "_comment": "eBay Seller Hub 一括出品（ファイルアップロード／File Exchange形式）の列定義。Seller Hubから最新のテンプレート（トレーディングカードカテゴリ）をダウンロードして列名を確認し、ここを合わせて変更する。value は Jinja2 式（使える変数：draft, item, specs, images, defaults, grader_id, grade_id（PSAのみ）, card_condition_id（シングルのみ）, category_id, condition_id（区分ごと。設定の ebay_categories））。",
   "encoding": "utf-8-sig",
   "info_rows": [],
   "columns": [
-    {"header": "*Action(SiteID=US|Country=JP|Currency=USD|Version=1193|CC=UTF-8)", "value": "Add"},
-    {"header": "CustomLabel", "value": "{{ item.cert_number }}"},
-    {"header": "*Category", "value": "{{ defaults.category_id }}"},
-    {"header": "*Title", "value": "{{ draft.title }}"},
-    {"header": "*ConditionID", "value": "{{ defaults.condition_id }}"},
-    {"header": "CD:Professional Grader - (ID: 27501)", "value": "{{ grader_id }}"},
-    {"header": "CD:Grade - (ID: 27502)", "value": "{{ grade_id }}"},
-    {"header": "CDA:Certification Number - (ID: 27503)", "value": "{{ item.cert_number }}"},
-    {"expand": "item_specifics", "header_format": "C:{key}"},
-    {"header": "PicURL", "value": "{{ images | join('|') }}"},
-    {"header": "*Description", "value": "{{ draft.description_html }}"},
-    {"header": "*Format", "value": "{{ 'Auction' if draft.format == 'auction' else 'FixedPrice' }}"},
-    {"header": "*Duration", "value": "{{ draft.duration_days if draft.format == 'auction' else 'GTC' }}"},
-    {"header": "*StartPrice", "value": "{{ draft.start_price }}"},
-    {"header": "BuyItNowPrice", "value": "{{ draft.bin_price if (draft.format == 'auction' and draft.bin_price) else '' }}"},
-    {"header": "*Quantity", "value": "1"},
-    {"header": "ShippingProfileName", "value": "{{ defaults.shipping_profile }}"},
-    {"header": "ReturnProfileName", "value": "{{ defaults.return_profile }}"},
-    {"header": "PaymentProfileName", "value": "{{ defaults.payment_profile }}"},
-    {"header": "*Location", "value": "{{ defaults.location }}"},
-    {"header": "Country", "value": "{{ defaults.country }}"},
-    {"header": "PostalCode", "value": "{{ defaults.postal_code }}"}
+    {
+      "header": "*Action(SiteID=US|Country=JP|Currency=USD|Version=1193|CC=UTF-8)",
+      "value": "Add"
+    },
+    {
+      "header": "CustomLabel",
+      "value": "{{ item.sku }}"
+    },
+    {
+      "header": "*Category",
+      "value": "{{ category_id }}"
+    },
+    {
+      "header": "*Title",
+      "value": "{{ draft.title }}"
+    },
+    {
+      "header": "*ConditionID",
+      "value": "{{ condition_id }}"
+    },
+    {
+      "header": "CD:Professional Grader - (ID: 27501)",
+      "value": "{{ grader_id }}"
+    },
+    {
+      "header": "CD:Grade - (ID: 27502)",
+      "value": "{{ grade_id }}"
+    },
+    {
+      "header": "CDA:Certification Number - (ID: 27503)",
+      "value": "{{ item.cert_number if item.category == 'psa' else '' }}"
+    },
+    {
+      "header": "CD:Card Condition - (ID: 40001)",
+      "value": "{{ card_condition_id }}"
+    },
+    {
+      "expand": "item_specifics",
+      "header_format": "C:{key}"
+    },
+    {
+      "header": "PicURL",
+      "value": "{{ images | join('|') }}"
+    },
+    {
+      "header": "*Description",
+      "value": "{{ draft.description_html }}"
+    },
+    {
+      "header": "*Format",
+      "value": "{{ 'Auction' if draft.format == 'auction' else 'FixedPrice' }}"
+    },
+    {
+      "header": "*Duration",
+      "value": "{{ draft.duration_days if draft.format == 'auction' else 'GTC' }}"
+    },
+    {
+      "header": "*StartPrice",
+      "value": "{{ draft.start_price }}"
+    },
+    {
+      "header": "BuyItNowPrice",
+      "value": "{{ draft.bin_price if (draft.format == 'auction' and draft.bin_price) else '' }}"
+    },
+    {
+      "header": "*Quantity",
+      "value": "{{ draft.quantity }}"
+    },
+    {
+      "header": "ShippingProfileName",
+      "value": "{{ defaults.shipping_profile }}"
+    },
+    {
+      "header": "ReturnProfileName",
+      "value": "{{ defaults.return_profile }}"
+    },
+    {
+      "header": "PaymentProfileName",
+      "value": "{{ defaults.payment_profile }}"
+    },
+    {
+      "header": "*Location",
+      "value": "{{ defaults.location }}"
+    },
+    {
+      "header": "Country",
+      "value": "{{ defaults.country }}"
+    },
+    {
+      "header": "PostalCode",
+      "value": "{{ defaults.postal_code }}"
+    }
   ],
-  "grader_ids": {"PSA": "275010", "BCCG": "275011", "BVG": "275012", "BGS": "275013", "CSG": "275014", "CGC": "275015", "SGC": "275016"},
-  "grade_ids": {"10": "275020", "9.5": "275021", "9": "275022", "8.5": "275023", "8": "275024", "7.5": "275025", "7": "275026", "6.5": "275027", "6": "275028", "5.5": "275029", "5": "2750210", "4.5": "2750211", "4": "2750212", "3.5": "2750213", "3": "2750214", "2.5": "2750215", "2": "2750216", "1.5": "2750217", "1": "2750218"},
+  "grader_ids": {
+    "PSA": "275010",
+    "BCCG": "275011",
+    "BVG": "275012",
+    "BGS": "275013",
+    "CSG": "275014",
+    "CGC": "275015",
+    "SGC": "275016"
+  },
+  "grade_ids": {
+    "10": "275020",
+    "9.5": "275021",
+    "9": "275022",
+    "8.5": "275023",
+    "8": "275024",
+    "7.5": "275025",
+    "7": "275026",
+    "6.5": "275027",
+    "6": "275028",
+    "5.5": "275029",
+    "5": "2750210",
+    "4.5": "2750211",
+    "4": "2750212",
+    "3.5": "2750213",
+    "3": "2750214",
+    "2.5": "2750215",
+    "2": "2750216",
+    "1.5": "2750217",
+    "1": "2750218"
+  },
   "result_columns": {
     "_comment": "Seller Hub のアップロード結果CSVの列名候補（大文字小文字・空白は無視して照合）",
-    "custom_label": ["customlabel", "sku", "customlabelsku"],
-    "item_id": ["itemid", "ebayitemid", "item"],
-    "status": ["status", "result"],
-    "error": ["errormessage", "errors", "error", "message", "warnings"]
+    "custom_label": [
+      "customlabel",
+      "sku",
+      "customlabelsku"
+    ],
+    "item_id": [
+      "itemid",
+      "ebayitemid",
+      "item"
+    ],
+    "status": [
+      "status",
+      "result"
+    ],
+    "error": [
+      "errormessage",
+      "errors",
+      "error",
+      "message",
+      "warnings"
+    ]
   }
 }

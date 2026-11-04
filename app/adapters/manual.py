@@ -21,7 +21,9 @@ from sqlalchemy.orm import Session
 from app import audit
 from app.adapters.base import ImportResult, ListingAdapter, OrderAdapter, SubmitResult, TrackingUploadResult
 from app.config import get_config
-from app.models import ExportBatch, Item, ItemStatus as IS, Listing, ListingDraft, Order, Shipment, User  # noqa: F401
+from app.models import (  # noqa: F401
+    Category, ExportBatch, Item, ItemStatus as IS, Listing, ListingDraft, Order, Shipment, User,
+)
 from app.services import listing as listing_svc, notify, orders as order_svc, states
 from app.services.errors import ServiceError
 from app.settings_store import get_setting
@@ -44,6 +46,7 @@ class ManualListingAdapter(ListingAdapter):
     def build_csv(self, db: Session, drafts: list[ListingDraft]) -> str:
         conf = load_column_config()
         defaults = get_setting(db, "listing_defaults")
+        ebay_cats = get_setting(db, "ebay_categories") or {}
         spec_keys: list[str] = []
         for d in drafts:
             for k in (d.item_specifics_json or {}):
@@ -67,10 +70,16 @@ class ManualListingAdapter(ListingAdapter):
         for d in drafts:
             item = db.get(Item, d.item_id)
             assert item is not None
+            psa = item.category == Category.PSA
+            cat = (ebay_cats.get(item.category) or {})
             ctx = {"draft": d, "item": item, "specs": d.item_specifics_json or {},
                    "images": listing_svc.image_urls(item), "defaults": defaults,
-                   "grader_id": conf.get("grader_ids", {}).get((item.grader or "").upper(), item.grader or ""),
-                   "grade_id": conf.get("grade_ids", {}).get(str(item.grade or ""), item.grade or "")}
+                   "category_id": cat.get("category_id") or defaults.get("category_id", ""),
+                   "condition_id": cat.get("condition_id") or defaults.get("condition_id", ""),
+                   "grader_id": conf.get("grader_ids", {}).get((item.grader or "").upper(), item.grader or "") if psa else "",
+                   "grade_id": conf.get("grade_ids", {}).get(str(item.grade or ""), item.grade or "") if psa else "",
+                   "card_condition_id": (listing_svc.raw_condition(db, item.condition).get("ebay_id", "")
+                                         if item.category == Category.SINGLE else "")}
             out = []
             for kind, c in cells:
                 if kind == "spec":
@@ -83,18 +92,22 @@ class ManualListingAdapter(ListingAdapter):
     def submit(self, db: Session, user: User, drafts: list[ListingDraft]) -> SubmitResult:
         if not drafts:
             raise ServiceError("出品する在庫を選んでください")
+        formats = {d.format for d in drafts}
+        if len(formats) > 1:
+            raise ServiceError("通常出品とオークションは別々のCSVで出力してください")
         for d in drafts:
             item = db.get(Item, d.item_id)
             if item is None or item.status != IS.READY or d.status not in ("ready", "exported", "failed"):
                 raise ServiceError(f"出品準備完了でない在庫が含まれています（下書き {d.id}）")
             if not listing_svc.image_urls(item):
-                raise ServiceError(f"cert {item.cert_number} の画像が整形されていません")
+                raise ServiceError(f"{item.key_label} の画像が整形されていません")
         conf = load_column_config()
         text = self.build_csv(db, drafts)
         batch_id = to_jst(utcnow()).strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)  # type: ignore[union-attr]
         path = get_config().exports_dir / f"ebay-upload-{batch_id}.csv"
         path.write_text(text, encoding=conf.get("encoding", "utf-8-sig"))
-        db.add(ExportBatch(id=batch_id, file_path=str(path), item_count=len(drafts), created_by=user.id))
+        db.add(ExportBatch(id=batch_id, file_path=str(path), item_count=len(drafts), format=formats.pop(),
+                           created_by=user.id))
         for d in drafts:
             d.status = "exported"
             d.export_batch_id = batch_id
@@ -133,12 +146,13 @@ class ManualListingAdapter(ListingAdapter):
             def get(k):
                 i = cols.get(k)
                 return row[i].strip() if i is not None and i < len(row) else ""
-            cert, ebay_id, status, err = get("custom_label"), get("item_id"), get("status"), get("error")
-            if not cert:
+            key, ebay_id, status, err = get("custom_label"), get("item_id"), get("status"), get("error")
+            if not key:
                 continue
-            item = db.scalar(select(Item).where(Item.cert_number == cert))
+            item = db.scalar(select(Item).where(Item.sku == key)) or \
+                db.scalar(select(Item).where(Item.cert_number == key))
             if item is None:
-                res.skipped.append((cert, "在庫が見つかりません"))
+                res.skipped.append((key, "在庫が見つかりません"))
                 continue
             draft = db.scalar(select(ListingDraft).where(ListingDraft.item_id == item.id,
                                                          ListingDraft.status.in_(["exported", "ready", "failed"]))
@@ -146,19 +160,19 @@ class ManualListingAdapter(ListingAdapter):
             ok = bool(re.fullmatch(r"\d{9,15}", ebay_id or "")) and not re.search(r"fail|error", status, re.I)
             if ok:
                 if item.status != IS.READY or draft is None:
-                    res.skipped.append((cert, f"出品準備完了ではありません（{IS.LABELS.get(item.status)}）"))
+                    res.skipped.append((key, f"出品準備完了ではありません（{IS.LABELS.get(item.status)}）"))
                     continue
                 mark_listed(db, user, draft, ebay_id)
-                res.listed.append((cert, ebay_id))
+                res.listed.append((key, ebay_id))
             else:
                 msg = err or status or "商品IDが返されませんでした"
                 if draft is not None:
                     draft.status = "failed"
                     draft.error = msg
-                res.failed.append((cert, msg))
+                res.failed.append((key, msg))
                 audit.log(db, audit.Actor.user(user), "item", item.id, "listing.failed", after={"error": msg})
                 notify.notify(db, "listing_failed", "item", item.id,
-                              f"❗ 出品投入の失敗：cert {cert} {item.card_name_en or ''} / {msg}",
+                              f"❗ 出品投入の失敗：{item.key_label} {item.display_name} / {msg}",
                               channel="listing", dedupe_key=str(draft.id if draft else 0),
                               link_path="/listings")
         audit.log(db, audit.Actor.user(user), "listing", None, "listing.import_result",
@@ -180,7 +194,8 @@ def mark_listed(db: Session, user: User, draft: ListingDraft, ebay_item_id: str,
         raise ServiceError("この在庫は既に出品中です（重複出品の防止）")
     start = start_time or utcnow()
     lst = Listing(item_id=item.id, draft_id=draft.id, ebay_item_id=ebay_item_id, title=draft.title,
-                  format=draft.format, start_price=draft.start_price, bin_price=draft.bin_price,
+                  format=draft.format, quantity=draft.quantity, start_price=draft.start_price,
+                  bin_price=draft.bin_price,
                   current_price=draft.start_price, currency=draft.currency, start_time=start,
                   end_time=start + timedelta(days=draft.duration_days) if draft.format == "auction" else None,
                   status="active", source="manual")
@@ -199,10 +214,11 @@ class ManualOrderAdapter(OrderAdapter):
     name = "manual"
 
     def record_sale(self, db, user, listing, *, buyer, amount, currency, ship_country, sold_at=None,
-                    ebay_order_id=None, paid=False) -> Order:
-        o = order_svc.create_order_from_sale(db, user, listing, buyer=buyer, amount=Decimal(str(amount)),
+                    ebay_order_id=None, paid=False, quantity=1) -> Order:
+        o = order_svc.create_order_from_sale(db, user, listing, buyer=buyer,
+                                             amount=Decimal(str(amount)) if amount is not None else None,
                                              currency=currency, ship_country=ship_country, sold_at=sold_at,
-                                             ebay_order_id=ebay_order_id, source="manual")
+                                             ebay_order_id=ebay_order_id, source="manual", quantity=quantity)
         if paid:
             order_svc.record_payment(db, user, o, sold_at, None)
         return o
