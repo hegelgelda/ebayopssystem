@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}操作ログ{% endblock %}
+{% block content %}
+<h1>操作ログ</h1>
+<form class="card" method="get"><div class="row">
+  <div><label>対象</label><select name="target_type"><option value="">すべて</option>{% for t in ['item','order','listing','user','setting','notification','system'] %}<option {% if f.target_type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+  <div><label>対象ID</label><input type="text" name="target_id" value="{{ f.target_id }}"></div>
+  <div><label>操作（部分一致）</label><input type="text" name="action" value="{{ f.action }}" placeholder="price.approve など"></div>
+  <div><label>操作者</label><select name="actor"><option value="">すべて</option><option value="system" {% if f.actor == 'system' %}selected{% endif %}>system</option>
+    {% for uid, u in users.items() %}<option value="{{ uid }}" {% if f.actor == uid|string %}selected{% endif %}>{{ u.display_name }}</option>{% endfor %}</select></div>
+  <div><button class="primary">絞り込み</button></div>
+</div></form>
+{% set logs = rows %}{% set show_target = True %}
+{% include "partials/log_table.html" %}
+<div class="actions">
+  {% if page > 1 %}<a class="btn" href="?{{ request.query_params|string|replace('page=' ~ page, '') }}&page={{ page - 1 }}">前へ</a>{% endif %}
+  {% if has_next %}<a class="btn" href="?{{ request.query_params|string|replace('page=' ~ page, '') }}&page={{ page + 1 }}">次へ</a>{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% macro item_badge(status) -%}
+<span class="badge {% if status in ('READY','LISTED') %}ok{% elif status in ('INTAKE','PHOTOGRAPHED') %}warn{% elif status == 'WITHDRAWN' %}err{% endif %}">{{ ITEM_LABELS.get(status, status) }}</span>
+{%- endmacro %}
+
+{% macro order_badge(status) -%}
+<span class="badge {% if status in ('COMPLETED','DELIVERED') %}ok{% elif status in ('EXCEPTION','CASE_OPEN','CANCELLED') %}err{% elif status in ('AWAITING_PAYMENT','AWAITING_SHIPMENT') %}warn{% endif %}">{{ ORDER_LABELS.get(status, status) }}</span>
+{%- endmacro %}
+
+{% macro deadline(dt) -%}
+{% if dt %}{% set r = dt|remaining %}<span class="{% if r[1] %}overdue{% endif %}">{{ dt|jst }}（{{ r[0] }}）</span>{% else %}—{% endif %}
+{%- endmacro %}
+
+{% macro thumb(item) -%}
+{% set p = item.photo('front') %}
+{% if p and p.processed_path %}<img class="thumb" src="/img/{{ p.processed_path }}" alt="" loading="lazy">{% else %}<span class="thumb" style="display:inline-block"></span>{% endif %}
+{%- endmacro %}
+
+{% macro version_field(obj) -%}<input type="hidden" name="version" value="{{ obj.version }}">{%- endmacro %}

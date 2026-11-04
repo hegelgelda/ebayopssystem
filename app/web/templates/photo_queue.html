@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "macros.html" import item_badge, thumb %}
+{% block title %}撮影{% endblock %}
+{% block content %}
+<h1>撮影</h1>
+<div class="card">
+  <video id="scanner" playsinline muted hidden></video>
+  <button type="button" class="primary big" id="scan-btn">📷 cert番号を読み取って開く</button>
+  <form method="get" action="/photos/scan" class="row" style="margin-top:8px">
+    <div><input type="text" name="cert" id="cert" inputmode="numeric" placeholder="cert番号を手入力"></div>
+    <div style="flex:0 0 auto"><button>開く</button></div>
+  </form>
+</div>
+<h2>未撮影（入荷済み）{{ intake|length }}件</h2>
+<div class="table-wrap"><table>
+{% for it in intake %}
+<tr><td><a href="/photos/{{ it.id }}">cert {{ it.cert_number }}</a> {{ it.card_name_jp or it.card_name_en or it.model_id }}
+  <div class="small muted">{{ it.storage_box }}{% if it.storage_slot %}-{{ it.storage_slot }}{% endif %} ・ 表{{ '✓' if it.photo('front') else '—' }} 裏{{ '✓' if it.photo('back') else '—' }}</div></td>
+  <td style="width:1%"><a class="btn primary" href="/photos/{{ it.id }}">撮影</a></td></tr>
+{% else %}<tr><td class="muted">未撮影の在庫はありません。</td></tr>{% endfor %}
+</table></div>
+<details style="margin-top:16px"><summary>撮り直し（撮影済み〜出品準備完了）</summary>
+<div class="table-wrap" style="margin-top:8px"><table>
+{% for it in retake %}
+<tr><td>{{ thumb(it) }}</td><td><a href="/photos/{{ it.id }}">cert {{ it.cert_number }}</a> {{ it.card_name_jp or it.card_name_en }}</td><td>{{ item_badge(it.status) }}</td></tr>
+{% endfor %}
+</table></div></details>
+{% endblock %}
+{% block scripts %}
+<script src="/static/scan.js"></script>
+<script>
+document.getElementById('scan-btn').onclick = () => {
+  const v = document.getElementById('scanner'); v.hidden = false;
+  CertScanner.start(v, (code) => { location.href = '/photos/scan?cert=' + encodeURIComponent(code); });
+};
+</script>
+{% endblock %}

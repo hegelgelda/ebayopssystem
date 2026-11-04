@@ -1,0 +1,13 @@
+<div class="table-wrap"><table>
+<tr><th>日時</th><th>操作者</th><th>操作</th><th>変更前</th><th>変更後</th><th>理由</th></tr>
+{% for l in logs %}
+<tr>
+  <td class="small">{{ l.created_at|jst('%m-%d %H:%M:%S') }}</td>
+  <td class="small">{% if l.actor_type in ('user','bot') and l.actor_id in users %}{{ users[l.actor_id].display_name }}{% if l.actor_type == 'bot' %}（Discord）{% endif %}{% else %}{{ l.actor_type }}{% endif %}</td>
+  <td class="small"><code>{{ l.action }}</code>{% if show_target %}<div class="muted">{{ l.target_type }}:{{ l.target_id }}</div>{% endif %}</td>
+  <td class="small log-json">{% if l.before_json %}<pre>{{ l.before_json|redact(show_sensitive)|tojson }}</pre>{% endif %}</td>
+  <td class="small log-json">{% if l.after_json %}<pre>{{ l.after_json|redact(show_sensitive)|tojson }}</pre>{% endif %}</td>
+  <td class="small">{{ l.reason or '' }}</td>
+</tr>
+{% else %}<tr><td colspan="6" class="muted">記録はありません。</td></tr>{% endfor %}
+</table></div>

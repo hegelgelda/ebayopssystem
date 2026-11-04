@@ -1,0 +1,22 @@
+{$DOMAIN} {
+	encode gzip zstd
+
+	# eBay が取りに来る画像。認証なしで公開（パスに推測できないトークンを含む）
+	handle_path /img/* {
+		root * /data/app/images/public
+		header Cache-Control "public, max-age=86400"
+		header X-Robots-Tag "noindex"
+		file_server
+	}
+
+	handle {
+		reverse_proxy app:8000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+}

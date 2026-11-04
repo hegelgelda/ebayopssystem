@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#2457d6">
+<title>{% block title %}eBay運用ツール{% endblock %}</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/vendor/htmx-2.0.4.min.js" defer></script>
+</head>
+<body>
+{% if user %}
+<header class="top"><div class="bar">
+  <a class="brand" href="/">Torelis eBay</a>
+  <nav class="main">
+    <a href="/">ダッシュボード</a>
+    <a href="/intake">入荷</a>
+    <a href="/photos">撮影</a>
+    <a href="/pricing">価格承認</a>
+    <a href="/listings">出品</a>
+    <a href="/orders?status=open">注文</a>
+    <a href="/items">在庫</a>
+    <a href="/audit">操作ログ</a>
+    {% if user.level >= 2 %}<a href="/settings">設定</a><a href="/users">ユーザー</a>{% endif %}
+  </nav>
+  <div class="who">{{ user.display_name }} <span class="badge">Lv{{ user.level }}</span>
+    <form class="inline" method="post" action="/logout"><button class="small" style="padding:4px 8px">ログアウト</button></form>
+  </div>
+</div></header>
+{% endif %}
+<main>
+{% for f in flashes %}<div class="flash {{ f.kind }}">{{ f.message }}</div>{% endfor %}
+{% block content %}{% endblock %}
+</main>
+<script>
+if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js').catch(()=>{}); }
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

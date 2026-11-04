@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}入荷登録{% endblock %}
+{% block content %}
+<h1>入荷登録</h1>
+{% if last %}<div class="flash ok">直前の登録：<a href="/items/{{ last.id }}">cert {{ last.cert_number }} {{ last.card_name_jp or last.card_name_en }}</a> ・ <a href="/photos/{{ last.id }}">このまま撮影する</a></div>{% endif %}
+
+<div class="card">
+  <video id="scanner" playsinline muted hidden></video>
+  <div class="actions">
+    <button type="button" class="primary big" id="scan-btn">📷 cert番号を読み取る</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <div><label>cert番号（読めなければ手入力）</label><input type="text" id="cert-manual" inputmode="numeric" value="{{ cert }}"></div>
+    <div style="flex:0 0 auto"><button type="button" id="lookup-btn">カード情報を取得</button></div>
+  </div>
+  <div id="lookup-status" class="small muted" style="margin-top:6px"></div>
+</div>
+
+<form method="post" action="/intake" class="card" id="intake-form">
+  <input type="hidden" name="info_source" id="f-info_source" value="{{ (form or {}).get('info_source', 'manual') }}">
+  <div class="row">
+    <div><label>cert番号 *</label><input type="text" name="cert_number" id="f-cert_number" required inputmode="numeric" value="{{ (form or {}).get('cert_number', cert) }}"></div>
+    <div><label>グレーダー</label><input type="text" name="grader" id="f-grader" value="{{ (form or {}).get('grader', 'PSA') }}"></div>
+    <div><label>グレード</label><input type="text" name="grade" id="f-grade" value="{{ (form or {}).get('grade', '') }}"></div>
+    <div><label>Population</label><input type="number" name="psa_population" id="f-psa_population" value="{{ (form or {}).get('psa_population', '') }}"></div>
+  </div>
+  <div class="row">
+    <div><label>モデルID（セットID-型番）*</label><input type="text" name="model_id" id="f-model_id" value="{{ (form or {}).get('model_id', '') }}" placeholder="例：SV2a-201"></div>
+    <div><label>セットID</label><input type="text" name="set_id" id="f-set_id" value="{{ (form or {}).get('set_id', '') }}"></div>
+    <div><label>型番</label><input type="text" name="card_number" id="f-card_number" value="{{ (form or {}).get('card_number', '') }}"></div>
+  </div>
+  <div class="row">
+    <div><label>カード名（日本語）</label><input type="text" name="card_name_jp" id="f-card_name_jp" value="{{ (form or {}).get('card_name_jp', '') }}"></div>
+    <div><label>カード名（英語）</label><input type="text" name="card_name_en" id="f-card_name_en" value="{{ (form or {}).get('card_name_en', '') }}"></div>
+    <div><label>セット名</label><input type="text" name="set_name" id="f-set_name" value="{{ (form or {}).get('set_name', '') }}"></div>
+  </div>
+  <details style="margin-top:8px"><summary>モデルIDの候補を検索</summary>
+    <div class="row"><div><input type="search" id="cand-q" placeholder="カード名・型番・セット"></div><div style="flex:0 0 auto"><button type="button" id="cand-btn">検索</button></div></div>
+  </details>
+  <div id="candidates" style="margin-top:6px"></div>
+  <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
+  <div class="row">
+    <div><label>仕入値（円）*</label><input type="number" name="purchase_price_jpy" required inputmode="numeric" value="{{ (form or {}).get('purchase_price_jpy', '') }}"></div>
+    <div><label>仕入日</label><input type="date" name="purchase_date" value="{{ (form or {}).get('purchase_date', today) }}"></div>
+    <div><label>保管ボックス *</label><input type="text" name="storage_box" required value="{{ (form or {}).get('storage_box', '') }}" id="f-storage_box"></div>
+    <div><label>位置</label><input type="text" name="storage_slot" value="{{ (form or {}).get('storage_slot', '') }}"></div>
+  </div>
+  <label>メモ</label><input type="text" name="memo" value="{{ (form or {}).get('memo', '') }}">
+  <p class="small muted">自動取得した値は必ず目で確認してから登録してください。</p>
+  <div class="actions"><button class="primary big">登録して次へ</button></div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script src="/static/scan.js"></script>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const status = $('lookup-status');
+  const FIELDS = ['model_id','set_id','card_number','card_name_jp','card_name_en','set_name','grader','grade','psa_population'];
+  // 保管ボックスは連続登録のため前回値を引き継ぐ
+  try { if (!$('f-storage_box').value) $('f-storage_box').value = localStorage.getItem('intake_box') || ''; } catch (e) {}
+  $('intake-form').addEventListener('submit', () => { try { localStorage.setItem('intake_box', $('f-storage_box').value); } catch (e) {} });
+
+  function fill(fields) { FIELDS.forEach(k => { if (fields[k] !== undefined && fields[k] !== null) $('f-' + k).value = fields[k]; }); }
+  function showCandidates(list) {
+    const box = $('candidates'); box.innerHTML = '';
+    list.forEach(c => {
+      const b = document.createElement('button'); b.type = 'button'; b.style.margin = '3px';
+      b.textContent = `${c.model_id} ${c.name_jp || ''} ${c.name_en || ''}`;
+      b.onclick = () => fill({model_id: c.model_id, set_id: c.set_id, card_number: c.card_number, card_name_jp: c.name_jp, card_name_en: c.name_en, set_name: c.set_name});
+      box.appendChild(b);
+    });
+  }
+  async function lookup(raw) {
+    status.textContent = '取得中…';
+    const r = await fetch('/api/lookup?cert=' + encodeURIComponent(raw), {headers: {'Accept': 'application/json'}});
+    const js = await r.json();
+    if (!r.ok) { status.textContent = js.error || '取得できませんでした'; return; }
+    $('f-cert_number').value = js.cert; $('cert-manual').value = js.cert;
+    if (js.existing) {
+      status.innerHTML = `⚠️ cert ${js.cert} は登録済みです（${js.existing.status}）：<a href="${js.existing.url}">既存レコードを開く</a>`;
+      return;
+    }
+    FIELDS.forEach(k => { if (k !== 'grader') $('f-' + k).value = ''; });
+    fill(js.fields || {});
+    $('f-info_source').value = js.source;
+    const label = {courtyard: '自社Courtyardカタログ', psa: 'PSA', manual: '自動取得できませんでした（手入力）'}[js.source];
+    status.textContent = `情報源：${label}` + (js.source !== 'manual' ? '。内容を確認してください' : '');
+    showCandidates(js.candidates || []);
+  }
+  $('lookup-btn').onclick = () => lookup($('cert-manual').value);
+  $('scan-btn').onclick = () => {
+    const v = $('scanner'); v.hidden = false;
+    CertScanner.start(v, (code) => { v.hidden = true; if (navigator.vibrate) navigator.vibrate(80); lookup(code); })
+      .catch(e => { status.textContent = 'カメラを起動できませんでした：' + e; v.hidden = true; });
+  };
+  $('cand-btn').onclick = async () => {
+    const r = await fetch('/api/catalog/search?q=' + encodeURIComponent($('cand-q').value));
+    showCandidates((await r.json()).candidates || []);
+  };
+  {% if last %}$('scan-btn').focus();{% endif %}
+  {% if cert and not form %}lookup({{ cert|tojson }});{% endif %}
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% from "macros.html" import item_badge %}
+{% block title %}撮影 cert {{ item.cert_number }}{% endblock %}
+{% block content %}
+<h1>撮影：cert {{ item.cert_number }} <span id="item-status">{{ item_badge(item.status) }}</span></h1>
+<p>{{ item.card_name_jp or '' }} {{ item.card_name_en or '' }} <span class="muted small">{{ item.model_id }} / {{ item.grader }} {{ item.grade }} / 保管 {{ item.storage_box }}{% if item.storage_slot %}-{{ item.storage_slot }}{% endif %}</span></p>
+<div id="queue-status" class="small muted"></div>
+{% if item.status in ('SOLD', 'WITHDRAWN') %}<div class="flash warn">売却済み・取り下げの在庫には写真を追加できません。</div>{% endif %}
+
+<div class="grid" id="slots">
+  {% for kind, label in [('front', '表（必須）'), ('back', '裏（必須）')] %}
+  {% set p = item.photo(kind) %}
+  <div class="slot {% if p %}filled{% endif %}" data-kind="{{ kind }}" data-photo-id="{{ p.id if p else '' }}">
+    <b>{{ label }}</b>
+    <div class="preview">{% if p and p.processed_path %}<img src="/img/{{ p.processed_path }}">{% elif p %}<span class="muted">整形中…</span>{% else %}<span class="muted">未撮影</span>{% endif %}</div>
+    <div class="small muted info">{% if p %}{{ p.width or '' }}{% if p.width %}×{{ p.height }}{% endif %} {{ '背景除去済み' if p.bg_removed else '' }}{% endif %}</div>
+    <label class="btn primary" style="margin-top:6px">📷 {{ '撮り直す' if p else '撮影する' }}<input type="file" accept="image/*" capture="environment" hidden></label>
+    <label class="btn" style="margin-top:6px">ファイル<input type="file" accept="image/*" hidden></label>
+  </div>
+  {% endfor %}
+</div>
+
+<h2>追加写真（任意：ケースの傷、ラベル拡大など）</h2>
+<div class="photos" id="extras">
+  {% for p in item.active_photos() if p.kind == 'extra' %}
+  <figure data-photo-id="{{ p.id }}">{% if p.processed_path %}<img src="/img/{{ p.processed_path }}">{% else %}<span class="muted">整形中…</span>{% endif %}</figure>
+  {% endfor %}
+</div>
+<div class="actions">
+  <label class="btn">＋ 追加写真を撮る<input type="file" accept="image/*" capture="environment" hidden id="extra-cam"></label>
+  <label class="btn">＋ ファイルから追加<input type="file" accept="image/*" multiple hidden id="extra-file"></label>
+</div>
+
+<div class="actions" style="margin-top:20px">
+  {% if next_item %}<a class="btn primary big" href="/photos/{{ next_item.id }}">次のレコードへ（cert {{ next_item.cert_number }}）</a>{% endif %}
+  <a class="btn" href="/photos">未撮影一覧へ</a>
+  <a class="btn" href="/items/{{ item.id }}">在庫詳細</a>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/upload.js"></script>
+<script>
+(function () {
+  const ITEM = {{ item.id }};
+  const qs = document.getElementById('queue-status');
+  document.querySelectorAll('.slot').forEach(slot => {
+    slot.querySelectorAll('input[type=file]').forEach(inp => inp.addEventListener('change', () => {
+      const f = inp.files[0]; if (!f) return;
+      const prev = slot.querySelector('.preview');
+      prev.innerHTML = ''; const img = document.createElement('img'); img.src = URL.createObjectURL(f); img.style.opacity = .5; prev.appendChild(img);
+      slot.querySelector('.info').textContent = '送信待ち…';
+      PhotoUploader.enqueue(ITEM, slot.dataset.kind, f, slot.dataset.photoId || '');
+      inp.value = '';
+    }));
+  });
+  function addExtras(files) {
+    for (const f of files) {
+      const fig = document.createElement('figure'); const img = document.createElement('img'); img.src = URL.createObjectURL(f); img.style.opacity = .5;
+      fig.appendChild(img); document.getElementById('extras').appendChild(fig);
+      PhotoUploader.enqueue(ITEM, 'extra', f);
+    }
+  }
+  document.getElementById('extra-cam').addEventListener('change', e => { addExtras(e.target.files); e.target.value = ''; });
+  document.getElementById('extra-file').addEventListener('change', e => { addExtras(e.target.files); e.target.value = ''; });
+
+  PhotoUploader.on(ev => {
+    if (ev.type === 'retry') qs.textContent = '⚠️ 送信できませんでした。回線が戻ったら自動で再送します';
+    if (ev.type === 'queue') qs.textContent = ev.count ? `未送信 ${ev.count}枚（自動で再送します）` : '';
+    if (ev.type === 'error') { qs.textContent = '❌ ' + ev.message; }
+    if (ev.type === 'done') poll();
+  });
+
+  let pollTimer = null;
+  async function poll() {
+    clearTimeout(pollTimer);
+    const r = await fetch(`/api/items/${ITEM}/photos`); if (!r.ok) return;
+    const js = await r.json();
+    document.getElementById('item-status').innerHTML = `<span class="badge">${js.item_status_label}</span>`;
+    let pending = false;
+    js.photos.forEach(p => {
+      if (p.status === 'pending') pending = true;
+      if (p.kind === 'extra') return;
+      const slot = document.querySelector(`.slot[data-kind=${p.kind}]`); if (!slot) return;
+      slot.dataset.photoId = p.id; slot.classList.add('filled');
+      const info = slot.querySelector('.info');
+      if (p.status === 'done') {
+        slot.querySelector('.preview').innerHTML = `<img src="${p.url}?t=${Date.now()}">`;
+        info.innerHTML = `${p.width}×${p.height} ${p.bg_removed ? '背景除去済み' : '背景除去なし（元画像）'} ・ <a href="${p.public_url}" target="_blank">公開URL</a>`;
+      } else if (p.status === 'failed') { info.textContent = '整形に失敗しました：' + (p.error || ''); }
+      else { info.textContent = '整形中…'; }
+    });
+    if (pending) pollTimer = setTimeout(poll, 2000);
+  }
+  poll();
+})();
+</script>
+{% endblock %}

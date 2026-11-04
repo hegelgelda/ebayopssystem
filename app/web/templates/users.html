@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}ユーザー管理{% endblock %}
+{% block content %}
+<h1>ユーザー管理（Lv2）</h1>
+<form class="card" method="post" action="/users">
+  <h2 style="margin-top:0">招待</h2>
+  <div class="row">
+    <div><label>DiscordのユーザーID</label><input type="text" name="discord_user_id" inputmode="numeric" required></div>
+    <div><label>表示名</label><input type="text" name="display_name" required></div>
+    <div><label>権限</label><select name="level"><option value="1">Lv1</option><option value="2">Lv2</option></select></div>
+    <div><button class="primary">招待</button></div>
+  </div>
+  <p class="small muted">Discordの「開発者モード」をオンにして、ユーザーを右クリック →「ユーザーIDをコピー」で取得できます。</p>
+</form>
+<div class="table-wrap"><table>
+<tr><th>ユーザー</th><th>権限</th><th>担当</th><th>状態</th><th></th></tr>
+{% for u in users %}
+<tr {% if not u.is_active %}class="muted"{% endif %}>
+  <td>{{ u.display_name }}<div class="small muted">{{ u.discord_user_id }} ・ 最終ログイン {{ u.last_login_at|jst if u.last_login_at else '—' }}</div></td>
+  <td>{% if u.id == user.id %}Lv{{ u.level }}（自分）{% else %}
+    <form class="inline" method="post" action="/users/{{ u.id }}/level"><select name="level" onchange="this.form.submit()" style="width:auto">
+      <option value="1" {% if u.level == 1 %}selected{% endif %}>Lv1</option><option value="2" {% if u.level == 2 %}selected{% endif %}>Lv2</option></select></form>{% endif %}</td>
+  <td><form method="post" action="/users/{{ u.id }}/roles" class="row" style="gap:4px">
+    <label style="color:var(--fg);flex:0 0 auto"><input type="checkbox" name="is_photographer" value="1" {% if u.is_photographer %}checked{% endif %}> 撮影</label>
+    <label style="color:var(--fg);flex:0 0 auto"><input type="checkbox" name="is_price_approver" value="1" {% if u.is_price_approver %}checked{% endif %}> 価格承認</label>
+    <input type="text" name="display_name" value="{{ u.display_name }}" style="flex:1 1 100px">
+    <button class="small" style="flex:0 0 auto">保存</button></form></td>
+  <td>{{ '有効' if u.is_active else '無効' }}</td>
+  <td>{% if u.id != user.id %}{% if u.is_active %}<form class="inline" method="post" action="/users/{{ u.id }}/deactivate" onsubmit="return confirm('{{ u.display_name }} を無効化しますか？')"><button class="danger small">無効化</button></form>
+    {% else %}<form class="inline" method="post" action="/users/{{ u.id }}/reactivate"><button class="small">再有効化</button></form>{% endif %}{% endif %}</td>
+</tr>
+{% endfor %}
+</table></div>
+{% endblock %}

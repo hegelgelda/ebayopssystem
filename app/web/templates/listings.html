@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% from "macros.html" import thumb %}
+{% block title %}出品準備・投入{% endblock %}
+{% block content %}
+<h1>出品準備・投入 <span class="badge">manual（CSV）</span></h1>
+
+<h2>① 価格確定 → 出品データを作成</h2>
+<form method="post" action="/listings/generate">
+<div class="table-wrap"><table>
+<tr><th></th><th></th><th>在庫</th><th>下書き</th></tr>
+{% for it, d, oq in priced_rows %}
+<tr>
+  <td><input type="checkbox" name="item_id" value="{{ it.id }}" {% if oq and it.relist_count %}disabled title="再出品の価格承認待ち"{% endif %}></td>
+  <td>{{ thumb(it) }}</td>
+  <td><a href="/items/{{ it.id }}">cert {{ it.cert_number }}</a> {{ it.card_name_en or it.card_name_jp }}{% if it.relist_count %} <span class="badge">再出品{{ it.relist_count }}</span>{% endif %}
+    {% if oq and it.relist_count %}<div class="small"><a href="/pricing/{{ it.id }}">再出品の価格承認待ち</a></div>{% endif %}</td>
+  <td>{% if d and d.status == 'draft' %}<a href="/drafts/{{ d.id }}">下書きを確認</a>{% else %}<span class="muted small">未作成</span>{% endif %}</td>
+</tr>
+{% else %}<tr><td colspan="4" class="muted">価格確定の在庫はありません。</td></tr>{% endfor %}
+</table></div>
+{% if priced_rows %}<div class="actions"><button class="primary">選んだ在庫の出品データを作成</button></div>{% endif %}
+</form>
+<p class="small muted">作成した下書きはプレビュー画面でLv2が確認すると「出品準備完了」になります。</p>
+
+<h2>② 出品準備完了 → CSV出力</h2>
+<form method="post" action="/listings/export">
+<div class="table-wrap"><table>
+<tr><th><input type="checkbox" onclick="document.querySelectorAll('.ready-cb').forEach(c=>c.checked=this.checked)"></th><th>在庫</th><th>タイトル</th><th>価格</th><th>状態</th><th></th></tr>
+{% for d in ready %}
+<tr>
+  <td><input type="checkbox" class="ready-cb" name="draft_id" value="{{ d.id }}" {% if d.status == 'ready' %}checked{% endif %}></td>
+  <td><a href="/items/{{ d.item_id }}">#{{ d.item_id }}</a></td>
+  <td><a href="/drafts/{{ d.id }}">{{ d.title }}</a></td>
+  <td class="small">{{ 'オークション' if d.format == 'auction' else '即決' }} {{ d.start_price|money }}{% if d.bin_price and d.format == 'auction' %} / 即決 {{ d.bin_price|money }}{% endif %}</td>
+  <td>{% if d.status == 'exported' %}<span class="badge warn">CSV出力済み {{ d.export_batch_id }}</span>{% elif d.status == 'failed' %}<span class="badge err">失敗</span><div class="small">{{ d.error }}</div>{% else %}<span class="badge ok">準備完了</span>{% endif %}</td>
+  <td><details><summary class="small">商品IDを手入力</summary>
+    <form method="post" action="/drafts/{{ d.id }}/mark-listed" class="row"><div><input type="text" name="ebay_item_id" inputmode="numeric" placeholder="eBay商品ID"></div><div><button class="small">出品中にする</button></div></form></details></td>
+</tr>
+{% else %}<tr><td colspan="6" class="muted">出品準備完了の在庫はありません。</td></tr>{% endfor %}
+</table></div>
+{% if ready %}<div class="actions"><button class="primary">選んだ在庫のCSVを出力</button></div>{% endif %}
+</form>
+
+{% if batches %}
+<h2>出力したCSV</h2>
+<div class="table-wrap"><table>
+<tr><th>バッチ</th><th>件数</th><th>作成</th><th></th></tr>
+{% for b in batches %}<tr {% if request.query_params.get('batch') == b.id %}style="background:var(--ok-bg)"{% endif %}><td>{{ b.id }}</td><td>{{ b.item_count }}</td><td class="small">{{ b.created_at|jst }}</td><td><a class="btn" href="/exports/{{ b.id }}.csv">ダウンロード</a></td></tr>{% endfor %}
+</table></div>
+{% endif %}
+
+<h2>③ Seller Hub の結果CSVを取り込む</h2>
+<form class="card" method="post" action="/listings/import" enctype="multipart/form-data">
+  <ol class="small">
+    <li>Seller Hub →「Reports」→「Uploads」でCSVをアップロードする</li>
+    <li>処理完了後、結果ファイル（商品ID付き）をダウンロードする</li>
+    <li>ここで取り込むと、商品IDが台帳に書き戻され「出品中」になる</li>
+  </ol>
+  <div class="row"><div><input type="file" name="file" accept=".csv,text/csv" required></div><div style="flex:0 0 auto"><button class="primary">取り込む</button></div></div>
+</form>
+
+<h2>出品中 {{ active|length }}件</h2>
+<div class="table-wrap"><table>
+<tr><th>在庫</th><th>eBay</th><th>形式・価格</th><th>終了</th></tr>
+{% for l in active %}
+<tr><td><a href="/items/{{ l.item_id }}">{{ l.title }}</a></td><td><a href="https://www.ebay.com/itm/{{ l.ebay_item_id }}" target="_blank">{{ l.ebay_item_id }}</a></td>
+  <td class="small">{{ 'オークション' if l.format == 'auction' else '即決' }} {{ l.start_price|money }}</td>
+  <td class="small">{% if l.end_time %}{% set r = l.end_time|remaining %}<span class="{% if r[1] %}overdue{% endif %}">{{ l.end_time|jst }}</span>{% if r[1] %}<br><a href="/items/{{ l.item_id }}">落札・不落札を記録</a>{% endif %}{% else %}—{% endif %}</td></tr>
+{% else %}<tr><td colspan="4" class="muted">出品中の在庫はありません。</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% from "macros.html" import item_badge, order_badge, version_field %}
+{% block title %}cert {{ item.cert_number }}{% endblock %}
+{% block content %}
+<h1>cert {{ item.cert_number }} {{ item_badge(item.status) }}{% if item.relist_count %} <span class="badge">不落札 {{ item.relist_count }}回</span>{% endif %}</h1>
+<p>{{ item.card_name_jp or '' }} / {{ item.card_name_en or '' }} <span class="muted">({{ item.model_id }})</span></p>
+
+<div class="actions">
+  {% if item.status == 'INTAKE' or item.status in ('PHOTOGRAPHED','PRICED','READY') %}<a class="btn" href="/photos/{{ item.id }}">撮影・差し替え</a>{% endif %}
+  {% if item.status in ('PHOTOGRAPHED','PRICED') %}<a class="btn" href="/pricing/{{ item.id }}">価格</a>{% endif %}
+  {% if draft %}<a class="btn" href="/drafts/{{ draft.id }}">出品下書き</a>{% endif %}
+  {% for o in orders %}<a class="btn" href="/orders/{{ o.id }}">注文 #{{ o.id }} {{ ORDER_LABELS[o.status] }}</a>{% endfor %}
+</div>
+
+<h2>写真</h2>
+<div class="photos">
+  {% for p in item.active_photos() %}
+  <figure>{% if p.processed_path %}<a href="/img/{{ p.processed_path }}" target="_blank"><img src="/img/{{ p.processed_path }}" loading="lazy"></a>{% else %}<div class="muted">{{ '整形中' if p.process_status == 'pending' else '整形失敗' }}</div>{% endif %}
+  <figcaption class="small muted">{{ {'front':'表','back':'裏','extra':'追加'}[p.kind] }} ・ <a href="/media/original/{{ p.id }}" target="_blank">元画像</a></figcaption></figure>
+  {% else %}<p class="muted">写真はまだありません。</p>{% endfor %}
+</div>
+{% if old_photos %}<details><summary>差し替え前の写真（{{ old_photos|length }}枚）</summary><div class="photos">
+  {% for p in old_photos %}<figure>{% if p.processed_path %}<img src="/img/{{ p.processed_path }}" loading="lazy">{% endif %}<figcaption class="small muted">{{ p.kind }} {{ p.uploaded_at|jst }} → #{{ p.replaced_by_photo_id }}</figcaption></figure>{% endfor %}
+</div></details>{% endif %}
+
+{% if active_listing %}
+<h2>出品中</h2>
+<div class="card">
+  <dl class="kv">
+    <dt>eBay商品ID</dt><dd><a href="https://www.ebay.com/itm/{{ active_listing.ebay_item_id }}" target="_blank">{{ active_listing.ebay_item_id }}</a></dd>
+    <dt>形式</dt><dd>{{ 'オークション' if active_listing.format == 'auction' else '即決' }} ・ 開始 {{ active_listing.start_price|money }}{% if active_listing.bin_price %} ・ 即決 {{ active_listing.bin_price|money }}{% endif %}</dd>
+    <dt>終了時刻</dt><dd>{{ active_listing.end_time|jst if active_listing.end_time else '—' }}
+      <form class="inline" method="post" action="/listings/{{ active_listing.id }}/end-time"><input type="datetime-local" name="end_time" style="width:auto"><button class="small">修正</button></form></dd>
+  </dl>
+  <h3>落札を記録（eBayの画面を見て入力）</h3>
+  <form method="post" action="/listings/{{ active_listing.id }}/sale">
+    <div class="row">
+      <div><label>落札者（eBayユーザー名）</label><input type="text" name="buyer" required></div>
+      <div><label>落札価格</label><input type="text" name="amount" inputmode="decimal" required></div>
+      <div><label>通貨</label><select name="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option></select></div>
+      <div><label>配送先国（2文字）</label><input type="text" name="ship_country" maxlength="2" placeholder="US" required></div>
+    </div>
+    <div class="row">
+      <div><label>落札日時（JST、空欄なら今）</label><input type="datetime-local" name="sold_at"></div>
+      <div><label>eBay注文番号（任意）</label><input type="text" name="ebay_order_id"></div>
+      <div><label><input type="checkbox" name="paid" value="1"> 支払も完了している（即決）</label></div>
+    </div>
+    <div class="actions"><button class="primary">落札を記録</button></div>
+  </form>
+  <form method="post" action="/listings/{{ active_listing.id }}/unsold" onsubmit="return confirm('不落札として記録し、価格確定に戻しますか？')">
+    <div class="actions"><button>不落札を記録</button></div>
+  </form>
+</div>
+{% endif %}
+
+<h2>在庫情報</h2>
+<form method="post" action="/items/{{ item.id }}/edit" class="card">
+  {{ version_field(item) }}
+  <div class="row">
+    <div><label>モデルID</label><input type="text" name="model_id" value="{{ item.model_id }}"></div>
+    <div><label>セットID</label><input type="text" name="set_id" value="{{ item.set_id or '' }}"></div>
+    <div><label>型番</label><input type="text" name="card_number" value="{{ item.card_number or '' }}"></div>
+    <div><label>セット名</label><input type="text" name="set_name" value="{{ item.set_name or '' }}"></div>
+  </div>
+  <div class="row">
+    <div><label>カード名（日本語）</label><input type="text" name="card_name_jp" value="{{ item.card_name_jp or '' }}"></div>
+    <div><label>カード名（英語）</label><input type="text" name="card_name_en" value="{{ item.card_name_en or '' }}"></div>
+    <div><label>グレーダー</label><input type="text" name="grader" value="{{ item.grader or '' }}"></div>
+    <div><label>グレード</label><input type="text" name="grade" value="{{ item.grade or '' }}"></div>
+    <div><label>Population</label><input type="number" name="psa_population" value="{{ item.psa_population or '' }}"></div>
+  </div>
+  <div class="row">
+    <div><label>保管ボックス</label><input type="text" name="storage_box" value="{{ item.storage_box or '' }}"></div>
+    <div><label>位置</label><input type="text" name="storage_slot" value="{{ item.storage_slot or '' }}"></div>
+    {% if show_price %}
+    <div><label>仕入値（円）{% if user.level < 2 %}<span class="small">※修正はLv2</span>{% endif %}</label><input type="number" name="purchase_price_jpy" value="{{ item.purchase_price_jpy or '' }}" {% if user.level < 2 %}readonly{% endif %}></div>
+    <div><label>仕入日</label><input type="date" name="purchase_date" value="{{ item.purchase_date or '' }}" {% if user.level < 2 %}readonly{% endif %}></div>
+    {% endif %}
+  </div>
+  <label>メモ</label><input type="text" name="memo" value="{{ item.memo or '' }}">
+  <p class="small muted">登録：{{ item.registrant.display_name if item.registrant else '—' }} {{ item.created_at|jst }} ・ 情報源 {{ item.info_source or '—' }} ・ 版 {{ item.version }}</p>
+  <div class="actions"><button class="primary">保存</button></div>
+</form>
+
+{% if user.level >= 2 %}
+<details class="card"><summary>Lv2 操作（状態の巻き戻し・取り下げ）</summary>
+  {% if item.status not in ('LISTED','SOLD','WITHDRAWN') %}
+  <form method="post" action="/items/{{ item.id }}/rollback" class="row">
+    {{ version_field(item) }}
+    <div><label>戻す先</label><select name="to_status">{% for s in ['INTAKE','PHOTOGRAPHED','PRICED','READY'] %}<option value="{{ s }}">{{ ITEM_LABELS[s] }}</option>{% endfor %}</select></div>
+    <div><label>理由（必須）</label><input type="text" name="reason" required></div>
+    <div><button>状態を変更</button></div>
+  </form>
+  {% endif %}
+  {% if item.status != 'WITHDRAWN' %}
+  <form method="post" action="/items/{{ item.id }}/withdraw" class="row" onsubmit="return confirm('取り下げますか？')">
+    {{ version_field(item) }}
+    <div><label>取り下げ理由（必須）</label><input type="text" name="reason" required></div>
+    <div><button class="danger">取り下げ</button></div>
+  </form>
+  {% else %}<p>取り下げ理由：{{ item.withdraw_reason }}</p>{% endif %}
+</details>
+{% endif %}
+
+<h2>メモ・コメント</h2>
+<div class="card">
+  {% for c in comments %}<p><b>{{ c.user.display_name if c.user else '—' }}</b> <span class="small muted">{{ c.created_at|jst }}</span><br>{{ c.body }}</p>{% endfor %}
+  <form method="post" action="/comments" class="row"><input type="hidden" name="target_type" value="item"><input type="hidden" name="target_id" value="{{ item.id }}">
+    <div><input type="text" name="body" placeholder="コメントを追加" required></div><div style="flex:0 0 auto"><button>追加</button></div></form>
+</div>
+
+<h2>操作履歴</h2>
+{% include "partials/log_table.html" %}
+{% endblock %}

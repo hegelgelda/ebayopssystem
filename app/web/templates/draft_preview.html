@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "macros.html" import item_badge, version_field %}
+{% block title %}出品プレビュー{% endblock %}
+{% block content %}
+<h1>出品プレビュー <span class="badge">{{ d.status }}</span> {{ item_badge(item.status) }}</h1>
+<div class="card">
+  <form method="post" action="/drafts/{{ d.id }}/edit">
+    <label>タイトル（{{ d.title|length }}/80）</label>
+    <input type="text" name="title" value="{{ d.title }}" maxlength="80" {% if d.status != 'draft' %}readonly{% endif %}>
+    <div class="row">
+      <div><label>形式</label><input type="text" value="{{ 'オークション' if d.format == 'auction' else '即決' }}" readonly></div>
+      <div><label>期間（日）</label><input type="number" name="duration_days" value="{{ d.duration_days }}" {% if d.status != 'draft' or d.format != 'auction' %}readonly{% endif %}></div>
+      <div><label>開始価格</label><input type="text" value="{{ d.start_price|money(d.currency) }}" readonly></div>
+      <div><label>即決価格</label><input type="text" value="{{ d.bin_price|money(d.currency) if d.bin_price else '—' }}" readonly></div>
+    </div>
+    {% if d.status == 'draft' %}<div class="actions"><button>保存</button></div>{% endif %}
+  </form>
+</div>
+<div class="card">
+  <h2 style="margin-top:0">画像（{{ images|length }}枚）</h2>
+  <div class="photos">{% for u in images %}<figure><img src="{{ u }}"><figcaption class="small muted" style="word-break:break-all">{{ u }}</figcaption></figure>{% endfor %}</div>
+</div>
+<div class="card">
+  <h2 style="margin-top:0">Item Specifics</h2>
+  <dl class="kv">{% for k, v in d.item_specifics_json.items() %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>
+</div>
+<div class="card">
+  <h2 style="margin-top:0">説明文</h2>
+  <iframe sandbox="" srcdoc="{{ d.description_html }}" style="width:100%;height:420px;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>
+</div>
+<p class="small muted">テンプレート版 {{ d.template_version }} ・ 作成 {{ d.created_at|jst }}</p>
+<div class="actions">
+  {% if d.status == 'draft' and user.level >= 2 %}
+  <form method="post" action="/drafts/{{ d.id }}/confirm">{{ version_field(item) }}<button class="primary big">確認済みにする（出品準備完了）</button></form>
+  {% elif d.status == 'draft' %}<p class="muted">出品の最終確認はLv2が行います。</p>{% endif %}
+  {% if item.status in ('PRICED','READY') %}
+  <form method="post" action="/listings/generate"><input type="hidden" name="item_id" value="{{ item.id }}"><button>テンプレートから再生成</button></form>
+  {% endif %}
+  <a class="btn" href="/listings">出品準備へ戻る</a>
+</div>
+{% endblock %}

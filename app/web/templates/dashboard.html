@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% from "macros.html" import order_badge, deadline, item_badge %}
+{% block content %}
+<div id="live" hx-get="/" hx-trigger="every 30s" hx-select="#live" hx-swap="outerHTML">
+<h1>ダッシュボード <span class="muted small">{{ today.isoformat() }}（{{ WEEKDAY_JP[today.weekday()] }}）</span></h1>
+
+<div class="grid">
+  <div class="card">
+    <div class="muted small">今日の担当者</div>
+    <b>{{ duty_user.display_name if duty_user else "不在（@Lv2 にメンション）" }}</b>
+    <div class="small muted" style="margin-top:6px">撮影担当：{{ photographers|map(attribute='display_name')|join('、') or '—' }}<br>
+    価格承認：{{ approvers|map(attribute='display_name')|join('、') or '—' }}</div>
+  </div>
+  <div class="card">
+    <div class="muted small">次の出品日</div>
+    <b>{% if next_listing %}{{ next_listing.isoformat() }}（{{ WEEKDAY_JP[next_listing.weekday()] }}）{% else %}未設定{% endif %}</b>
+  </div>
+</div>
+
+<div class="stats">
+  <a class="stat" href="/photos"><b>{{ counts.INTAKE }}</b><span>未撮影</span></a>
+  <a class="stat" href="/pricing"><b>{{ counts.PHOTOGRAPHED }}</b><span>未承認</span></a>
+  <a class="stat" href="/listings"><b>{{ counts.PRICED }}</b><span>出品データ待ち</span></a>
+  <a class="stat" href="/listings"><b>{{ counts.READY }}</b><span>出品待ち</span></a>
+  <a class="stat" href="/items?status=LISTED"><b>{{ counts.LISTED }}</b><span>出品中</span></a>
+</div>
+
+<h2>今日対応が必要な注文</h2>
+{% if rows %}
+<div class="table-wrap"><table>
+<tr><th>注文</th><th>状態</th><th>期限</th><th class="hide-sm">担当</th></tr>
+{% for o, label, dl in rows %}
+<tr>
+  <td><a href="/orders/{{ o.id }}">#{{ o.id }} {{ o.item.card_name_en or o.item.card_name_jp or o.item.model_id }}</a><div class="small muted">cert {{ o.item.cert_number }} / {{ o.ship_country }}</div></td>
+  <td>{{ order_badge(o.status) }}{% if o.active_shipment() and o.active_shipment().ebay_upload_status != 'uploaded' %} <span class="badge warn">eBay未登録</span>{% endif %}</td>
+  <td>{% if label %}<div class="small muted">{{ label }}</div>{{ deadline(dl) }}{% else %}—{% endif %}</td>
+  <td class="hide-sm">{{ o.assignee.display_name if o.assignee else '—' }}</td>
+</tr>
+{% endfor %}
+</table></div>
+{% else %}<p class="muted">対応が必要な注文はありません。</p>{% endif %}
+
+<h2>未対応の通知</h2>
+{% if notes %}
+<div class="table-wrap"><table>
+<tr><th>通知</th><th>送信</th><th>エスカレーション</th><th></th></tr>
+{% for n in notes %}
+<tr>
+  <td>{% if n.target_type == 'order' %}<a href="/orders/{{ n.target_id }}">{% elif n.target_type == 'item' %}<a href="/items/{{ n.target_id }}">{% else %}<a href="/listings">{% endif %}{{ n.message|truncate(90) }}</a></td>
+  <td class="small">{{ n.sent_at|jst }}</td>
+  <td class="small">{% if n.escalated_at %}<span class="badge err">Lv2へ通知済み</span>{% else %}{{ deadline(n.escalate_at) }}{% endif %}</td>
+  <td><form class="inline" method="post" action="/notifications/{{ n.id }}/ack"><button>対応済み</button></form>
+      {% if n.target_type == 'order' %}<form class="inline" method="post" action="/notifications/{{ n.id }}/claim"><button>担当を引き取る</button></form>{% endif %}</td>
+</tr>
+{% endfor %}
+</table></div>
+{% else %}<p class="muted">未対応の通知はありません。</p>{% endif %}
+
+<h2>滞留在庫</h2>
+{% if stale %}
+<div class="table-wrap"><table>
+<tr><th>在庫</th><th>状態</th><th>日数</th></tr>
+{% for it, days in stale %}
+<tr><td><a href="/items/{{ it.id }}">cert {{ it.cert_number }} {{ it.card_name_jp or it.card_name_en or it.model_id }}</a></td><td>{{ item_badge(it.status) }}</td><td class="overdue">{{ days }}日</td></tr>
+{% endfor %}
+</table></div>
+{% else %}<p class="muted">滞留している在庫はありません。</p>{% endif %}
+</div>
+{% endblock %}

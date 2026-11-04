@@ -1,0 +1,32 @@
+{
+  "_comment": "既存の分析CSVを market_prices に取り込むための列マッピング例。実際のCSVの列名に合わせて書き換え、`python -m app.cli import-market-mapped --config config/market_import.json` で実行する。as_of は列名、または {\"value\": \"YYYY-MM-DD\"} で固定値を指定する。",
+  "files": [
+    {
+      "path": "/data/import/card_price_liquidity_v2_jp.csv",
+      "model_id": "model_id",
+      "as_of": {"value": "2026-10-31"},
+      "metrics": [
+        {"source": "courtyard_p2p", "metric": "median", "value": "p2p_median_usd", "currency": "USD", "count": "p2p_trades_30d"},
+        {"source": "pokeca", "metric": "psa10_price", "value": "pokeca_psa10_jpy", "currency": "JPY"},
+        {"source": "pokeca", "metric": "psa10_population", "value": "psa10_population"},
+        {"source": "pokeca", "metric": "change_30d", "value": "pokeca_change_30d_pct"}
+      ]
+    },
+    {
+      "path": "/data/import/buyback_card_stats.csv",
+      "model_id": "model_id",
+      "as_of": {"value": "2026-10-31"},
+      "metrics": [
+        {"source": "courtyard_buyback", "metric": "median", "value": "buyback_median_usd", "currency": "USD", "count": "buyback_count_30d"}
+      ]
+    },
+    {
+      "path": "/data/import/snkrdunk_psa10.csv",
+      "model_id": "model_id",
+      "as_of": "traded_at",
+      "metrics": [
+        {"source": "snkrdunk", "metric": "last_price", "value": "price_jpy", "currency": "JPY"}
+      ]
+    }
+  ]
+}

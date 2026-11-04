@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% from "macros.html" import order_badge, deadline, version_field %}
+{% block title %}注文 #{{ o.id }}{% endblock %}
+{% block content %}
+<h1>注文 #{{ o.id }} {{ order_badge(o.status) }}</h1>
+
+<div class="grid">
+  <div class="card">
+    <h2 style="margin-top:0">在庫</h2>
+    <div class="photos" style="grid-template-columns:1fr 1fr">
+      {% for p in item.active_photos() if p.kind in ('front','back') and p.processed_path %}<img src="/img/{{ p.processed_path }}">{% endfor %}
+    </div>
+    <p><a href="/items/{{ item.id }}">cert {{ item.cert_number }}</a> {{ item.card_name_jp or '' }} {{ item.card_name_en or '' }}<br>
+    <b>保管場所：{{ item.storage_box }}{% if item.storage_slot %}-{{ item.storage_slot }}{% endif %}</b></p>
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0">eBay</h2>
+    <dl class="kv">
+      <dt>商品</dt><dd>{% if o.listing %}<a href="https://www.ebay.com/itm/{{ o.listing.ebay_item_id }}" target="_blank">{{ o.listing.ebay_item_id }}</a> {{ o.listing.title }}{% endif %}</dd>
+      <dt>注文番号</dt><dd>{{ o.ebay_order_id or '—' }}</dd>
+      <dt>落札者</dt><dd>{{ o.buyer_username or '—' }}</dd>
+      <dt>金額</dt><dd>{{ o.total_amount|money(o.currency) }}</dd>
+      <dt>配送先の国</dt><dd>{{ o.ship_country }}</dd>
+      <dt>落札</dt><dd>{{ o.sold_at|jst }}</dd>
+      <dt>担当者</dt><dd>{{ o.assignee.display_name if o.assignee else '未割当' }}
+        <form class="inline" method="post" action="/orders/{{ o.id }}/claim"><button class="small">担当を引き取る</button></form></dd>
+    </dl>
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0">期限</h2>
+    <dl class="kv">
+      <dt>支払期限</dt><dd>{% if o.paid_at %}支払済み {{ o.paid_at|jst }}{% else %}{{ deadline(o.payment_due) }}{% endif %}</dd>
+      <dt>発送期限</dt><dd>{% if o.shipped_at %}発送済み {{ o.shipped_at|jst }}{% elif o.ship_by %}{{ deadline(o.ship_by) }}{% else %}支払後に決まります{% endif %}</dd>
+      <dt>破損報告窓口</dt><dd>{% if o.delivered_at %}{% if deadline_label == '破損報告の窓口' %}{{ deadline(deadline) }}{% else %}配達 {{ o.delivered_at|jst }}{% endif %}{% else %}—{% endif %}</dd>
+    </dl>
+    {% if gp %}<h3>粗利（Lv2のみ）</h3><dl class="kv small">
+      <dt>売上</dt><dd>{{ gp.revenue_jpy|money('JPY') }}（{{ gp.rate }} {{ gp.source }}）</dd>
+      <dt>eBay手数料</dt><dd>-{{ gp.fees_jpy|money('JPY') }}</dd><dt>関税</dt><dd>-{{ gp.duty_jpy|money('JPY') }}</dd>
+      <dt>送料</dt><dd>-{{ gp.shipping_jpy|money('JPY') }}</dd><dt>仕入値</dt><dd>-{{ gp.purchase_jpy|money('JPY') }}</dd>
+      <dt>粗利</dt><dd><b>{{ gp.gross_profit_jpy|money('JPY') }}</b>{% if o.gross_profit_jpy is not none %}（確定）{% else %}（見込み）{% endif %}</dd></dl>{% endif %}
+  </div>
+</div>
+
+{% if o.status == 'AWAITING_PAYMENT' %}
+<div class="card">
+  <h2 style="margin-top:0">支払を記録（eBayで支払完了を確認してから）</h2>
+  <form method="post" action="/orders/{{ o.id }}/payment" class="row">{{ version_field(o) }}
+    <div><label>支払日時（JST、空欄なら今）</label><input type="datetime-local" name="paid_at"></div>
+    <div><button class="primary">支払を記録</button></div></form>
+  {% if user.level >= 2 %}
+  <form method="post" action="/orders/{{ o.id }}/cancel" class="row" onsubmit="return confirm('未払いキャンセルとして記録しますか？')">{{ version_field(o) }}
+    <div><label>未払いキャンセルの理由（Lv2）</label><input type="text" name="reason" required></div><div><button class="danger">キャンセルを記録</button></div></form>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card" id="tracking">
+  <h2 style="margin-top:0">発送・追跡</h2>
+  {% if shipment %}
+    <p>{{ carriers[shipment.carrier] }} <b>{{ shipment.tracking_number }}</b> ・ <a href="{{ tracking_url }}" target="_blank">キャリアの追跡ページ</a>
+      ・ eBay登録 {% if shipment.ebay_upload_status == 'uploaded' %}<span class="badge ok">登録済み {{ shipment.ebay_uploaded_at|jst }}</span>{% else %}<span class="badge warn">未登録</span>{% endif %}</p>
+    {% if instructions %}
+    <div class="card" style="background:var(--warn-bg)">
+      <b>Seller Hub で追跡番号を登録する手順</b>
+      <ol>{% for s in instructions %}<li>{{ s }}</li>{% endfor %}</ol>
+      <form method="post" action="/orders/{{ o.id }}/tracking/uploaded"><button class="primary">eBayに登録済み</button></form>
+    </div>
+    {% endif %}
+    {% if o.status in ('SHIPPED','EXCEPTION','DELIVERED') %}
+    <form method="post" action="/orders/{{ o.id }}/tracking-event" class="row">
+      <div><label>配送状態（キャリアの追跡ページを見て選ぶ）</label><select name="status">{% for k, v in tracking_statuses.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+      <div><label>メモ（任意）</label><input type="text" name="note"></div>
+      <div><button>記録</button></div></form>
+    {% endif %}
+    <div class="table-wrap" style="margin-top:10px"><table><tr><th>日時</th><th>状態</th><th>内容</th></tr>
+      {% for e in shipment.events|reverse %}<tr><td class="small">{{ e.occurred_at|jst }}</td><td>{{ tracking_statuses.get(e.normalized_status, e.normalized_status) }}</td><td class="small">{{ e.raw_status or '' }} {{ e.location or '' }}</td></tr>
+      {% else %}<tr><td colspan="3" class="muted">配送履歴はまだありません。</td></tr>{% endfor %}</table></div>
+    {% if user.level >= 2 %}
+    <details style="margin-top:10px"><summary>追跡番号の修正・削除（Lv2）</summary>
+      <form method="post" action="/orders/{{ o.id }}/tracking/confirm" class="row">{{ version_field(o) }}
+        <div><label>キャリア</label><select name="carrier">{% for k, v in carriers.items() %}<option value="{{ k }}" {% if k == shipment.carrier %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+        <div><label>追跡番号</label><input type="text" name="number" inputmode="numeric" required></div><div><button>修正する</button></div></form>
+      <form method="post" action="/orders/{{ o.id }}/tracking/delete" class="row">{{ version_field(o) }}
+        <div><label>削除理由</label><input type="text" name="reason" required></div><div><button class="danger">削除</button></div></form>
+    </details>
+    {% endif %}
+  {% elif o.status == 'AWAITING_SHIPMENT' %}
+    <form method="post" action="/orders/{{ o.id }}/tracking/confirm" class="row">{{ version_field(o) }}
+      <div><label>キャリア</label><select name="carrier">{% for k, v in carriers.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+      <div><label>追跡番号</label><input type="text" name="number" inputmode="numeric" required></div>
+      <div><button class="primary">確認へ</button></div></form>
+  {% else %}<p class="muted">支払完了後に追跡番号を入力できます。</p>{% endif %}
+</div>
+
+<div class="card" id="checklist">
+  <h2 style="margin-top:0">作業チェックリスト</h2>
+  {% for c in check_defs %}{% set done = checks.get(c.key) %}
+  <form method="post" action="/orders/{{ o.id }}/checklist" style="margin:4px 0">
+    <input type="hidden" name="key" value="{{ c.key }}"><input type="hidden" name="checked" value="{{ '0' if done else '1' }}">
+    <button style="width:100%;text-align:left">{{ '☑' if done else '☐' }} {{ c.label }}{% if done %} <span class="small muted">— {{ users[done.checked_by].display_name if done.checked_by in users else '' }} {{ done.checked_at|jst('%m-%d %H:%M') }}</span>{% endif %}</button>
+  </form>{% endfor %}
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">ケース・返品リクエスト</h2>
+  {% if o.status == 'CASE_OPEN' %}
+    <p>ケース対応中（元の状態：{{ ORDER_LABELS.get(o.status_before_case, '') }}）</p>
+    {% if user.level >= 2 %}<form method="post" action="/orders/{{ o.id }}/case-close" class="row">{{ version_field(o) }}
+      <div><label>解決後</label><select name="to_status"><option value="previous">元の状態に戻す</option><option value="COMPLETED">完了にする</option></select></div>
+      <div><label>内容</label><input type="text" name="note" required></div><div><button>解決を記録</button></div></form>{% endif %}
+  {% elif o.status not in ('CANCELLED',) %}
+    <form method="post" action="/orders/{{ o.id }}/case-open" class="row">{{ version_field(o) }}
+      <div><label>ケースの内容（未着・説明相違・返品リクエストなど）</label><input type="text" name="note" required></div><div><button class="danger">ケースを記録</button></div></form>
+  {% endif %}
+</div>
+
+{% if user.level >= 2 %}
+<details class="card"><summary>Lv2 操作（ステータス変更・注文データの修正）</summary>
+  <form method="post" action="/orders/{{ o.id }}/status" class="row">{{ version_field(o) }}
+    <div><label>ステータス</label><select name="to_status">{% for s, l in ORDER_LABELS.items() %}<option value="{{ s }}" {% if s == o.status %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+    <div><label>理由（必須）</label><input type="text" name="reason" required></div><div><button>変更</button></div></form>
+  <form method="post" action="/orders/{{ o.id }}/edit">{{ version_field(o) }}
+    <div class="row">
+      <div><label>落札者</label><input type="text" name="buyer_username" value="{{ o.buyer_username or '' }}"></div>
+      <div><label>配送先国</label><input type="text" name="ship_country" value="{{ o.ship_country or '' }}" maxlength="2"></div>
+      <div><label>金額</label><input type="text" name="total_amount" value="{{ o.total_amount or '' }}"></div>
+      <div><label>通貨</label><input type="text" name="currency" value="{{ o.currency }}"></div>
+      <div><label>eBay注文番号</label><input type="text" name="ebay_order_id" value="{{ o.ebay_order_id or '' }}"></div>
+    </div>
+    <div class="row">
+      <div><label>支払日時（JST）</label><input type="datetime-local" name="paid_at"></div>
+      <div><label>発送期限（JST）</label><input type="datetime-local" name="ship_by"></div>
+      <div><label>支払期限（JST）</label><input type="datetime-local" name="payment_due"></div>
+      <div><label>理由（必須）</label><input type="text" name="reason"></div>
+      <div><button>修正を保存</button></div>
+    </div>
+  </form>
+</details>
+{% endif %}
+
+<h2>メモ・コメント</h2>
+<div class="card">
+  {% for c in comments %}<p><b>{{ c.user.display_name if c.user else '—' }}</b> <span class="small muted">{{ c.created_at|jst }}</span><br>{{ c.body }}</p>{% endfor %}
+  <form method="post" action="/comments" class="row"><input type="hidden" name="target_type" value="order"><input type="hidden" name="target_id" value="{{ o.id }}">
+    <div><input type="text" name="body" placeholder="コメントを追加（#orders のスレッドにも投稿されます）" required></div><div style="flex:0 0 auto"><button>追加</button></div></form>
+</div>
+
+<h2>通知</h2>
+<div class="table-wrap"><table><tr><th>イベント</th><th>送信</th><th>宛先</th><th>状況</th><th></th></tr>
+{% for n in notes %}<tr><td class="small">{{ n.message|truncate(80) }}</td><td class="small">{{ n.sent_at|jst }}</td><td class="small">{{ n.target }}</td>
+  <td class="small">{% if n.acknowledged_at %}対応済み {{ users[n.acknowledged_by].display_name if n.acknowledged_by in users else '(自動)' }}{% elif n.escalated_at %}<span class="badge err">Lv2へエスカレーション済み</span>{% elif n.escalate_at %}{{ deadline(n.escalate_at) }}でLv2へ{% endif %}</td>
+  <td>{% if not n.acknowledged_at %}<form class="inline" method="post" action="/notifications/{{ n.id }}/ack"><button class="small">対応済み</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="5" class="muted">通知はありません。</td></tr>{% endfor %}</table></div>
+
+<h2>操作履歴</h2>
+{% include "partials/log_table.html" %}
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}ログイン{% endblock %}
+{% block content %}
+<div class="card" style="max-width:420px;margin:60px auto;text-align:center">
+  <h1>Torelis eBay運用ツール</h1>
+  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+  <p class="muted">登録済みのDiscordアカウントでログインします。</p>
+  <a class="btn primary big" href="/auth/discord">Discordでログイン</a>
+  {% if dev_login %}
+  <hr style="margin:24px 0;border:0;border-top:1px solid var(--line)">
+  <form method="post" action="/auth/dev-login">
+    <label>開発用ログイン（Discord ユーザーID）</label>
+    <input type="text" name="discord_user_id" inputmode="numeric">
+    <div class="actions"><button>開発用ログイン</button></div>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

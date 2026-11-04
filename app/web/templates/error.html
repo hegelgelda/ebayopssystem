@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>{% if code == 403 %}権限がありません{% elif code == 404 %}見つかりません{% else %}エラー{% endif %}</h1>
+  <p>{{ message }}</p>
+  <a href="javascript:history.back()">戻る</a> ・ <a href="/">ダッシュボード</a>
+</div>
+{% endblock %}

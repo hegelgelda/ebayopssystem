@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "macros.html" import order_badge, deadline %}
+{% block title %}注文一覧{% endblock %}
+{% block content %}
+<h1>注文一覧</h1>
+<form class="card" method="get">
+  <div class="row">
+    <div><label>状態</label><select name="status"><option value="">すべて</option><option value="open" {% if f.status == 'open' %}selected{% endif %}>対応中（完了・取消以外）</option>
+      {% for s, l in ORDER_LABELS.items() %}<option value="{{ s }}" {% if f.status == s %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+    <div><label>担当者</label><select name="assignee"><option value="">すべて</option><option value="none" {% if f.assignee == 'none' %}selected{% endif %}>未割当</option>
+      {% for u in users %}<option value="{{ u.id }}" {% if f.assignee == u.id|string %}selected{% endif %}>{{ u.display_name }}</option>{% endfor %}</select></div>
+    <div><label>落札日（から）</label><input type="date" name="date_from" value="{{ f.date_from }}"></div>
+    <div><label>落札日（まで）</label><input type="date" name="date_to" value="{{ f.date_to }}"></div>
+    <div><label>検索</label><input type="search" name="q" value="{{ f.q }}" placeholder="落札者・cert・カード名"></div>
+    <div><button class="primary">絞り込み</button></div>
+  </div>
+</form>
+<div id="live" hx-get="" hx-trigger="every 30s" hx-select="#live" hx-swap="outerHTML">
+<div class="table-wrap"><table>
+<tr><th>注文</th><th>状態</th><th>金額</th><th class="hide-sm">落札者 / 国</th><th>期限</th><th class="hide-sm">担当</th></tr>
+{% for o in orders %}
+<tr>
+  <td><a href="/orders/{{ o.id }}">#{{ o.id }} {{ o.item.card_name_en or o.item.card_name_jp }}</a><div class="small muted">cert {{ o.item.cert_number }} ・ {{ o.sold_at|jst('%m-%d') }}</div></td>
+  <td>{{ order_badge(o.status) }}</td>
+  <td>{{ o.total_amount|money(o.currency) }}</td>
+  <td class="hide-sm small">{{ o.buyer_username }} / {{ o.ship_country }}</td>
+  <td class="small">{% if o.status == 'AWAITING_PAYMENT' %}支払 {{ deadline(o.payment_due) }}{% elif o.status == 'AWAITING_SHIPMENT' %}発送 {{ deadline(o.ship_by) }}{% else %}—{% endif %}</td>
+  <td class="hide-sm small">{{ o.assignee.display_name if o.assignee else '—' }}</td>
+</tr>
+{% else %}<tr><td colspan="6" class="muted">注文はありません。</td></tr>{% endfor %}
+</table></div>
+</div>
+{% endblock %}

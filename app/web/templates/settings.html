@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}設定{% endblock %}
+{% block content %}
+<h1>設定（Lv2）</h1>
+
+<form class="card" method="post" action="/settings/general">
+  <h2 style="margin-top:0">基本</h2>
+  <label>出品日（週2回）</label>
+  <div>{% for i in range(7) %}<label style="display:inline-block;margin-right:10px;color:var(--fg)"><input type="checkbox" name="listing_weekdays" value="{{ i }}" {% if i in listing_weekdays %}checked{% endif %}> {{ WEEKDAY_JP[i] }}</label>{% endfor %}</div>
+  <label style="color:var(--fg)"><input type="checkbox" name="duty_on_holiday" value="1" {% if duty_on_holiday %}checked{% endif %}> 祝日も曜日担当を優先する（オフなら祝日は不在扱いで@Lv2）</label>
+  <label style="color:var(--fg)"><input type="checkbox" name="show_pp" value="1" {% if show_pp %}checked{% endif %}> 仕入値を登録者以外のLv1にも表示する</label>
+  <div class="row">
+    <div><label>発送期限当日の通知（時・JST）</label><input type="number" name="ship_due_notify_hour_jst" value="{{ ship_due_hours[0] }}" min="0" max="23"></div>
+    <div><label>未発送ならLv2へ（時・JST）</label><input type="number" name="ship_due_escalate_hour_jst" value="{{ ship_due_hours[1] }}" min="0" max="23"></div>
+    <div><label>eBayアダプタ</label><select name="ebay_adapter"><option value="manual" selected>manual（CSV・手動記録）</option><option value="api" disabled>api（Phase 3）</option></select></div>
+  </div>
+  <div class="actions"><button class="primary">保存</button></div>
+</form>
+
+<div class="card" id="duty">
+  <h2 style="margin-top:0">曜日担当表</h2>
+  <form method="post" action="/settings/duty"><div class="row">
+    {% for i in range(7) %}<div><label>{{ WEEKDAY_JP[i] }}</label><select name="wd{{ i }}"><option value="">（空欄）</option>
+      {% for u in users %}<option value="{{ u.id }}" {% if schedule.get(i) == u.id %}selected{% endif %}>{{ u.display_name }}</option>{% endfor %}</select></div>{% endfor %}
+  </div><div class="actions"><button class="primary">保存</button></div></form>
+  <h3>臨時差し替え</h3>
+  <form method="post" action="/settings/override" class="row">
+    <div><label>日付</label><input type="date" name="d" required></div>
+    <div><label>担当者</label><select name="user_id"><option value="">不在（@Lv2）</option>{% for u in users %}<option value="{{ u.id }}">{{ u.display_name }}</option>{% endfor %}</select></div>
+    <div><button>追加</button></div></form>
+  <ul>{% for ov in overrides %}<li>{{ ov.date }}（{{ WEEKDAY_JP[ov.date.weekday()] }}）：{{ ov.user.display_name if ov.user else '不在' }}
+    <form class="inline" method="post" action="/settings/override"><input type="hidden" name="d" value="{{ ov.date }}"><input type="hidden" name="delete" value="1"><button class="small">削除</button></form></li>{% endfor %}</ul>
+  <p class="small muted">撮影担当・価格承認者は「ユーザー」画面で設定します（未設定なら曜日担当が兼ねます）。</p>
+</div>
+
+{% set labels = {
+  'escalation_minutes': 'エスカレーション時間（分。null はなし）',
+  'digest_times_jst': 'まとめ通知の時刻（Phase 2）',
+  'checklist_items': '作業チェックリスト項目',
+  'tracking_regex': '追跡番号の形式（正規表現）',
+  'price_rule': '価格ルール',
+  'fees': '手数料率・費用（損益分岐・粗利の計算）',
+  'listing_defaults': '出品の固定値（カテゴリ・ビジネスポリシー名など）',
+  'stale_days': '滞留とみなす日数'} %}
+{% for key, val in json_values.items() %}
+<form class="card" method="post" action="/settings/json/{{ key }}" id="{{ key }}">
+  <h2 style="margin-top:0">{{ labels.get(key, key) }}</h2>
+  <textarea name="value" rows="{{ [val.count('\n') + 2, 18]|min }}">{{ val }}</textarea>
+  <div class="actions"><button class="primary">保存</button></div>
+</form>
+{% endfor %}
+
+<div id="templates">
+<h2>出品テンプレート</h2>
+<p class="small muted">Jinja2 形式。使える変数：cert_number, model_id, card_name_jp, card_name_en, set_id, set_name, card_number, grader, grader_full, grade, year, population</p>
+{% for key, t in templates.items() %}
+<form class="card" method="post" action="/settings/template/{{ key }}">
+  <h3 style="margin-top:0">{{ {'title':'タイトル（80文字以内に切り詰め）','description':'説明文（HTML）','item_specifics':'Item Specifics（JSON）'}[key] }} <span class="small muted">v{{ t.version }}</span></h3>
+  <textarea name="body" rows="{{ 3 if key == 'title' else 14 }}">{{ t.body }}</textarea>
+  <div class="actions"><button class="primary">保存</button></div>
+</form>
+{% endfor %}
+</div>
+{% endblock %}
