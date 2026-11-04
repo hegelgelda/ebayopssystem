@@ -96,6 +96,10 @@ class CardCatalog(Base):
     name_jp: Mapped[str | None] = mapped_column(String(200))
     name_en: Mapped[str | None] = mapped_column(String(200))
     set_name: Mapped[str | None] = mapped_column(String(200))
+    set_name_jp: Mapped[str | None] = mapped_column(String(200))
+    rarity: Mapped[str | None] = mapped_column(String(32))
+    image_url: Mapped[str | None] = mapped_column(String(300))
+    source: Mapped[str | None] = mapped_column(String(32))  # tcg-catalog / csv / html など
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 

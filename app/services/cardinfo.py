@@ -137,18 +137,22 @@ def search_by_number(db: Session, number: str, set_q: str = "", limit: int = 30)
     set_q = (set_q or "").strip()
     if set_q:
         like = f"%{set_q}%"
-        stmt = stmt.where(or_(CardCatalog.set_id.ilike(like), CardCatalog.set_name.ilike(like)))
+        stmt = stmt.where(or_(CardCatalog.set_id.ilike(like), CardCatalog.set_name.ilike(like),
+                              CardCatalog.set_name_jp.ilike(like)))
     return list(db.scalars(stmt.order_by(CardCatalog.set_id).limit(limit)).all())
 
 
 def search_sets(db: Session, q: str = "", limit: int = 30) -> list[dict[str, str | None]]:
     """パック・BOX用：カード一覧に登録されているセットの一覧。"""
-    stmt = select(CardCatalog.set_id, func.max(CardCatalog.set_name)).group_by(CardCatalog.set_id)
+    stmt = (select(CardCatalog.set_id, func.max(CardCatalog.set_name), func.max(CardCatalog.set_name_jp))
+            .group_by(CardCatalog.set_id))
     q = (q or "").strip()
     if q:
         like = f"%{q}%"
-        stmt = stmt.where(or_(CardCatalog.set_id.ilike(like), CardCatalog.set_name.ilike(like)))
-    return [{"set_id": sid, "set_name": name} for sid, name in db.execute(stmt.order_by(CardCatalog.set_id).limit(limit))]
+        stmt = stmt.where(or_(CardCatalog.set_id.ilike(like), CardCatalog.set_name.ilike(like),
+                              CardCatalog.set_name_jp.ilike(like)))
+    return [{"set_id": sid, "set_name": name, "set_name_jp": jp if jp != name else None}
+            for sid, name, jp in db.execute(stmt.order_by(CardCatalog.set_id).limit(limit))]
 
 
 def candidates(db: Session, q: str, limit: int = 20) -> list[CardCatalog]:

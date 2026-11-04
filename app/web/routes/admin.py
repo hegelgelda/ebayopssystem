@@ -5,12 +5,12 @@ import json
 from datetime import date
 
 from fastapi import APIRouter, Depends, Form, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import audit
 from app.db import get_db
-from app.models import AuditLog, Category, DutyOverride, DutySchedule, ListingFormat as LF, Notification, Order, User
+from app.models import AuditLog, CardCatalog, Category, DutyOverride, DutySchedule, ListingFormat as LF, Notification, Order, User
 from app.services import duty, items as item_svc, listing as listing_svc, notify, orders as order_svc, users as user_svc
 from app.services.errors import NotFound, ServiceError
 from app.settings_store import DEFAULTS, get_setting, set_setting
@@ -85,7 +85,10 @@ def settings_page(request: Request, user: User = Depends(require_lv2), db: Sessi
         "user": user, "users": users, "schedule": schedule, "overrides": overrides, "json_values": json_values,
         "listing_weekdays": get_setting(db, "listing_weekdays"), "duty_on_holiday": get_setting(db, "duty_on_holiday"),
         "show_pp": get_setting(db, "show_purchase_price_to_lv1"), "adapter": get_setting(db, "ebay_adapter"),
-        "templates": templates, "Category": Category, "part_labels": listing_svc.PART_LABELS,
+        "templates": templates, "Category": Category,
+        "catalog_url": get_setting(db, "card_catalog_url"),
+        "catalog_stats": db.execute(select(func.count(CardCatalog.model_id), func.count(func.distinct(CardCatalog.set_id)),
+                                           func.max(CardCatalog.updated_at))).one(), "part_labels": listing_svc.PART_LABELS,
         "ship_due_hours": (get_setting(db, "ship_due_notify_hour_jst"),
                                                    get_setting(db, "ship_due_escalate_hour_jst"))})
 
@@ -176,6 +179,25 @@ def settings_override(request: Request, d: str = Form(...), user_id: str = Form(
     db.commit()
     flash(request, "臨時差し替えを保存しました")
     return to("/settings#duty")
+
+
+@router.post("/settings/catalog")
+def settings_catalog(request: Request, url: str = Form(""), user: User = Depends(require_lv2),
+                     db: Session = Depends(get_db)):
+    """カード一覧（tcg-catalog）を今すぐ取り込む。URL を変えた場合は保存もする。"""
+    from app.services import importers
+    url = url.strip() or get_setting(db, "card_catalog_url")
+    if url != get_setting(db, "card_catalog_url"):
+        _save(db, user, "card_catalog_url", url)
+    try:
+        res = importers.import_tcg_catalog(db, url)
+    except Exception as e:  # noqa: BLE001
+        db.commit()
+        raise ServiceError(f"カード一覧を取得できませんでした：{e}")
+    audit.log(db, audit.Actor.user(user), "setting", "card_catalog", "catalog.import", after={"url": url, **res})
+    db.commit()
+    flash(request, f"カード一覧を更新しました：{res['sets']}セット・{res['cards']}枚（新規 {res['inserted']}）")
+    return to("/settings#catalog")
 
 
 @router.post("/settings/template/{key}")

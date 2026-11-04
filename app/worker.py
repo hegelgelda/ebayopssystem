@@ -53,6 +53,17 @@ def job_poll() -> None:
         get_order_adapter(db).poll(db)
 
 
+@_safe("catalog")
+def job_catalog() -> None:
+    from app.services import importers
+    from app.settings_store import get_setting
+    with session_scope() as db:
+        url = get_setting(db, "card_catalog_url")
+        if url:
+            res = importers.import_tcg_catalog(db, url)
+            log.info("card catalog synced: %s", res)
+
+
 @_safe("backup")
 def job_backup() -> None:
     try:
@@ -87,6 +98,7 @@ def main() -> None:
     sched.add_job(job_poll, "interval", minutes=5, id="poll", max_instances=1, coalesce=True)
     sched.add_job(job_fx, "cron", hour=7, minute=10, id="fx")
     sched.add_job(job_backup, "cron", hour=3, minute=30, id="backup")
+    sched.add_job(job_catalog, "cron", hour=4, minute=10, id="catalog")
     sched.add_job(job_disk, "interval", hours=1, id="disk")
     sched.start()
     job_fx()

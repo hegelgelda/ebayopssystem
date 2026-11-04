@@ -68,6 +68,8 @@ Bot トークンが未設定の間も他のコンテナは動きます（通知�
 ```bash
 # CSV を data ボリュームに置く
 docker compose cp ./import app:/data/import
+# カード一覧（型番・日本語名・英語名・セット名・画像）。tcg-catalog から取り込む（毎日 4:10 に自動更新。設定画面の「今すぐ更新」でも可）
+docker compose exec app python -m app.cli import-catalog
 # モデルID → カード名（買取表HTMLの CARDS 定数。JSON / CSV も可）
 docker compose exec app python -m app.cli import-cards --file /data/import/buyback.html
 # Courtyard カタログ（cert番号 → モデルID）。列：cert_number, model_id, card_name, set_name, card_number, grader, grade

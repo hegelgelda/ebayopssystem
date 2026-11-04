@@ -89,7 +89,8 @@ def api_lookup(cert: str, user: User = Depends(current_user), db: Session = Depe
 
 def _cand(c) -> dict:
     return {"model_id": c.model_id, "set_id": c.set_id, "card_number": c.card_number, "name_jp": c.name_jp,
-            "name_en": c.name_en, "set_name": c.set_name}
+            "name_en": c.name_en, "set_name": c.set_name, "set_name_jp": c.set_name_jp, "rarity": c.rarity,
+            "image_url": c.image_url}
 
 
 @router.get("/api/catalog/search")

@@ -48,7 +48,7 @@ def test_number_search(admin_client, db, env):
     js = admin_client.get("/api/catalog/search?number=No.025").json()
     assert [c["model_id"] for c in js["candidates"]] == ["SV2a-025"]
     sets = admin_client.get("/api/catalog/sets?q=151").json()["sets"]
-    assert sets == [{"set_id": "SV2a", "set_name": "Pokemon Card 151"}]
+    assert sets == [{"set_id": "SV2a", "set_name": "Pokemon Card 151", "set_name_jp": None}]
 
 
 def test_single_fixed_multi_quantity_flow(admin_client, db, env, users):
@@ -208,3 +208,47 @@ def test_switch_lane_requires_reapproval(admin_client, db, env, users):
     with SessionLocal() as s:
         d = s.get(ListingDraft, draft_id)
         assert d.format == "auction" and d.quantity == 1 and str(d.bin_price) == "40.00"
+
+
+TCG_HTML = """<html><script>
+const SERIES   = [{"key": "Scarlet & Violet", "sets": [{"id": "SV2a", "name": "Pok\u00e9mon Card 151", "jp": "\u30dd\u30b1\u30e2\u30f3\u30ab\u30fc\u30c9151", "count": 2}]},
+                  {"key": "Promo", "sets": [{"id": "SV-P", "name": "SV promo", "jp": "SV\u30d7\u30ed\u30e2", "count": 1}]}];
+const CARDS    = {"SV2a": [{"n": "201", "en": "Charizard ex", "jp": "\u30ea\u30b6\u30fc\u30c9\u30f3ex", "r": "Rare"},
+                           {"n": "25", "en": "Pikachu", "jp": "\u30d4\u30ab\u30c1\u30e5\u30a6", "r": "Unknown"}],
+                  "SV-P": [{"n": "001", "en": "\u30d4\u30ab\u30c1\u30e5\u30a6", "jp": "\u30d4\u30ab\u30c1\u30e5\u30a6", "r": "Promo"}]};
+const PROMO_SETS = new Set(["SV-P"]);
+const BOXES    = [];
+</script></html>"""
+
+
+def test_tcg_catalog_import(db, env, admin_client, monkeypatch):
+    from app.models import CardCatalog
+    from app.services import importers
+    rows = importers.parse_tcg_catalog(TCG_HTML, "https://example.github.io/tcg-catalog/")
+    assert len(rows) == 3
+    by = {r["model_id"]: r for r in rows}
+    assert by["SV2a-201"]["name_en"] == "Charizard ex" and by["SV2a-201"]["set_name_jp"] == "ポケモンカード151"
+    assert by["SV2a-201"]["image_url"].endswith("/tpc/SV2a/SV2a_201_R_JP_LG.png")
+    assert by["SV2a-25"]["rarity"] is None
+    # プロモは en に日本語が入っているので英語名にしない。画像はカタログ側のパス
+    assert by["SV-P-001"]["name_en"] is None
+    assert by["SV-P-001"]["image_url"] == "https://example.github.io/tcg-catalog/images/promo/SV-P/SV-P_001.webp"
+
+    # 設定画面の「今すぐ更新」（取得は差し替え）。2回やっても重複しない
+    class Resp:
+        text = TCG_HTML
+        url = "https://example.github.io/tcg-catalog/"
+
+        def raise_for_status(self):
+            pass
+    import httpx
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: Resp())
+    for _ in range(2):
+        r = admin_client.post("/settings/catalog", data={"url": "https://example.github.io/tcg-catalog/"})
+        assert r.status_code == 303
+    db.expire_all()
+    assert db.query(CardCatalog).count() == 3
+    # 日本語のセット名でも絞り込める
+    js = admin_client.get("/api/catalog/search?number=201&set=ポケモンカード").json()
+    assert [c["model_id"] for c in js["candidates"]] == ["SV2a-201"] and js["candidates"][0]["image_url"]
+    assert "3</b>枚" in admin_client.get("/settings").text

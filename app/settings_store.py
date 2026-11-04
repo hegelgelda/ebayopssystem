@@ -98,6 +98,8 @@ DEFAULTS: dict[str, Any] = {
         {"key": "vg", "label": "Moderately Played (Very Good)", "short": "MP", "ebay_id": "400012"},
         {"key": "poor", "label": "Heavily Played (Poor)", "short": "HP", "ebay_id": "400013"},
     ],
+    # シングルの型番検索に使うカード一覧の取得元（毎日自動で更新。設定画面から手動更新も可）
+    "card_catalog_url": "https://hegelgelda.github.io/tcg-catalog/",
     "payment_due_days": 4,
     "ship_business_days": 2,
     "delivered_to_completed_hours": 48,

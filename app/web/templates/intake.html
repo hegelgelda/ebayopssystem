@@ -24,7 +24,7 @@
 <div class="card" data-cats="single">
   <div class="row">
     <div><label>型番（例：201 / 201/165）</label><input type="search" id="num-q" inputmode="text" placeholder="カード右下の番号"></div>
-    <div><label>セットで絞り込み（任意）</label><input type="search" id="num-set" placeholder="SV2a / 151 など"></div>
+    <div><label>セットで絞り込み（任意）</label><input type="search" id="num-set" placeholder="SV2a / 151 / ポケモンカード151"></div>
     <div style="flex:0 0 auto"><button type="button" class="primary" id="num-btn">型番で検索</button></div>
   </div>
   <div id="num-status" class="small muted" style="margin-top:6px"></div>
@@ -142,8 +142,13 @@
   $('intake-form').addEventListener('submit', () => { try { localStorage.setItem('intake_box', $('f-storage_box').value); } catch (e) {} });
 
   function fill(fields) { FIELDS.forEach(k => { if (fields[k] !== undefined && fields[k] !== null) $('f-' + k).value = fields[k]; }); }
-  function candButton(text, onclick) {
-    const b = document.createElement('button'); b.type = 'button'; b.textContent = text;
+  const esc = (v) => String(v ?? '').replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+  function candButton(text, onclick, img) {
+    const b = document.createElement('button'); b.type = 'button';
+    if (img) {
+      b.className = 'cand-img';
+      b.innerHTML = `<img src="${esc(img)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span>${esc(text)}</span>`;
+    } else { b.textContent = text; }
     b.onclick = () => { b.parentNode.querySelectorAll('button').forEach(x => x.classList.remove('selected')); b.classList.add('selected'); onclick(); };
     return b;
   }
@@ -179,8 +184,9 @@
     $('num-status').textContent = js.candidates.length ? `型番 ${js.number}：${js.candidates.length}件。該当するカードを選んでください`
       : `型番 ${js.number} はカード一覧にありません。下の欄に直接入力してください`;
     $('f-card_number').value = $('f-card_number').value || js.number;
-    js.candidates.forEach(c => box.appendChild(candButton(`${c.set_id} ${c.set_name || ''} — ${c.card_number} ${c.name_jp || ''} ${c.name_en ? '/ ' + c.name_en : ''}`,
-      () => { fill(fromCard(c)); $('f-info_source').value = 'catalog'; $('f-condition').focus(); })));
+    js.candidates.forEach(c => box.appendChild(candButton(
+      `${c.name_jp || ''}${c.name_en ? ' / ' + c.name_en : ''}\n${c.set_id}-${c.card_number} ${c.set_name_jp || c.set_name || ''}${c.rarity ? ' ・ ' + c.rarity : ''}`,
+      () => { fill(fromCard(c)); $('f-info_source').value = 'catalog'; $('f-condition').focus(); }, c.image_url)));
     if (js.candidates.length === 1) box.firstChild.click();
   }
   $('num-btn').onclick = searchNumber;
@@ -190,7 +196,7 @@
   async function searchSets() {
     const r = await fetch('/api/catalog/sets?q=' + encodeURIComponent($('set-q').value));
     const js = await r.json(); const box = $('set-cands'); box.innerHTML = '';
-    js.sets.forEach(s => box.appendChild(candButton(`${s.set_id} ${s.set_name || ''}`, () => {
+    js.sets.forEach(s => box.appendChild(candButton(`${s.set_id} ${s.set_name || ''}${s.set_name_jp ? '（' + s.set_name_jp + '）' : ''}`, () => {
       $('f-set_id').value = s.set_id; $('f-set_name').value = s.set_name || '';
       if (!$('f-card_name_en').value && s.set_name) $('f-card_name_en').value = s.set_name;
       $('f-info_source').value = 'catalog';

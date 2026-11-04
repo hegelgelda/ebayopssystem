@@ -6,6 +6,7 @@
   python -m app.cli import-market-mapped --config config/market_import.json # 横持ちCSV（列マッピング）
   python -m app.cli import-cert-catalog --file courtyard_catalog.csv
   python -m app.cli import-cards --file buyback.html                        # CARDS 定数
+  python -m app.cli import-catalog [--url https://hegelgelda.github.io/tcg-catalog/]  # カード一覧をWebから更新
   python -m app.cli fetch-fx
   python -m app.cli backup
   python -m app.cli list-backups
@@ -43,6 +44,8 @@ def main(argv: list[str] | None = None) -> int:
     for name in ("import-market", "import-cert-catalog", "import-cards"):
         x = sub.add_parser(name)
         x.add_argument("--file", required=True)
+    ic = sub.add_parser("import-catalog", help="tcg-catalog からカード一覧（型番・名前）を取り込む")
+    ic.add_argument("--url", default="")
     m = sub.add_parser("import-market-mapped")
     m.add_argument("--config", required=True)
     sub.add_parser("fetch-fx")
@@ -87,6 +90,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{f['path']}: inserted={ins} updated={upd}")
         elif args.cmd == "import-cert-catalog":
             print(f"cert_catalog: {importers.import_cert_catalog(db, Path(args.file))} rows")
+        elif args.cmd == "import-catalog":
+            from app.settings_store import get_setting
+            url = args.url or get_setting(db, "card_catalog_url")
+            print(f"card_catalog from {url}: {importers.import_tcg_catalog(db, url)}")
         elif args.cmd == "import-cards":
             print(f"card_catalog: {importers.import_cards(db, Path(args.file))} rows")
         elif args.cmd == "fetch-fx":

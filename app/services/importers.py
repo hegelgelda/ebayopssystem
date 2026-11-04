@@ -8,6 +8,7 @@ import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from urllib.parse import urljoin
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -154,9 +155,105 @@ def extract_cards_constant(html: str) -> list[dict]:
     return data
 
 
+# ---- tcg-catalog（https://hegelgelda.github.io/tcg-catalog/）----
+# ページに埋め込まれた SERIES（セット一覧）と CARDS（{セットID: [{n, en, jp, r}]}）を読む。
+
+LIMITLESS_IMG = "https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/tpc/{s}/{s}_{n}_R_JP_LG.png"
+
+
+def _js_const(html: str, name: str):
+    m = re.search(rf"(?:const|let|var)\s+{name}\s*=\s*", html)
+    if not m:
+        return None
+    rest = html[m.end():]
+    try:
+        return json.JSONDecoder().raw_decode(rest)[0]
+    except json.JSONDecodeError:
+        if name == "CARDS":
+            return extract_cards_constant(html)
+        return None
+
+
+def is_tcg_catalog(html: str) -> bool:
+    cards = _js_const(html, "CARDS")
+    return isinstance(cards, dict) and bool(cards) and all(isinstance(v, list) for v in list(cards.values())[:5]) \
+        and _js_const(html, "SERIES") is not None
+
+
+def parse_tcg_catalog(html: str, base_url: str = "") -> list[dict]:
+    series = _js_const(html, "SERIES") or []
+    cards = _js_const(html, "CARDS") or {}
+    sets = {st["id"]: st for se in series for st in se.get("sets", [])}
+    m = re.search(r"PROMO_SETS\s*=\s*new\s+Set\((\[.*?\])\)", html, re.S)
+    promo = set(json.loads(m.group(1))) if m else set()
+    rows = []
+    for sid, lst in cards.items():
+        st = sets.get(sid, {})
+        for c in lst:
+            n = str(c.get("n", "")).strip()
+            if not n:
+                continue
+            en = (c.get("en") or "").strip() or None
+            if en and not en.isascii():  # プロモ等は en に日本語が入っている
+                en = None
+            if sid in promo:
+                img = urljoin(base_url, f"images/promo/{sid}/{sid}_{n}.webp") if base_url else None
+            else:
+                img = LIMITLESS_IMG.format(s=sid, n=n)
+            rarity = c.get("r")
+            rows.append({
+                "model_id": f"{sid}-{n}", "set_id": sid, "card_number": n,
+                "name_jp": (c.get("jp") or "").strip() or None, "name_en": en,
+                "set_name": st.get("name"), "set_name_jp": st.get("jp"),
+                "rarity": None if rarity in (None, "", "Unknown") else rarity, "image_url": img,
+            })
+    return rows
+
+
+def upsert_card_rows(db: Session, rows: list[dict], source: str) -> tuple[int, int]:
+    existing = {c.model_id: c for c in db.scalars(select(CardCatalog))}
+    ins = upd = 0
+    for r in rows:
+        row = existing.get(r["model_id"])
+        if row is None:
+            row = CardCatalog(model_id=r["model_id"])
+            db.add(row)
+            existing[r["model_id"]] = row
+            ins += 1
+        else:
+            upd += 1
+        for k, v in r.items():
+            if k != "model_id" and (v is not None or k in ("rarity", "image_url")):
+                setattr(row, k, v)
+        row.source = source
+    db.flush()
+    return ins, upd
+
+
+def import_tcg_catalog(db: Session, url: str) -> dict:
+    """tcg-catalog のページを取得してカード一覧に取り込む（冪等）。"""
+    import httpx
+    from app.services import health
+    try:
+        r = httpx.get(url, timeout=60, follow_redirects=True)
+        r.raise_for_status()
+        rows = parse_tcg_catalog(r.text, str(r.url))
+        if not rows:
+            raise ValueError("カードデータ（SERIES / CARDS）が見つかりません")
+    except Exception as e:  # noqa: BLE001
+        health.record(db, "tcg-catalog", ok=False, error=str(e))
+        raise
+    health.record(db, "tcg-catalog", ok=True)
+    ins, upd = upsert_card_rows(db, rows, "tcg-catalog")
+    return {"inserted": ins, "updated": upd, "sets": len({x["set_id"] for x in rows}), "cards": len(rows)}
+
+
 def import_cards(db: Session, path: Path) -> int:
     """モデルID → 日本語名/英語名。HTML（CARDS定数）・JSON・CSV に対応。"""
     text = path.read_text(encoding="utf-8-sig")
+    if path.suffix.lower() in (".html", ".htm", ".js") and is_tcg_catalog(text):
+        ins, upd = upsert_card_rows(db, parse_tcg_catalog(text), "tcg-catalog")
+        return ins + upd
     if path.suffix.lower() in (".html", ".htm", ".js"):
         rows = extract_cards_constant(text)
     elif path.suffix.lower() == ".json":

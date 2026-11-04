@@ -17,6 +17,14 @@
   <div class="actions"><button class="primary">保存</button></div>
 </form>
 
+<form class="card" id="catalog" method="post" action="/settings/catalog">
+  <h2 style="margin-top:0">カード一覧（シングルの型番検索に使う）</h2>
+  <p>登録済み：<b>{{ catalog_stats[0] }}</b>枚・{{ catalog_stats[1] }}セット{% if catalog_stats[2] %}（最終更新 {{ catalog_stats[2]|jst }}）{% endif %}</p>
+  <label>取得元のURL（毎日 4:10 に自動で更新）</label>
+  <input type="text" name="url" value="{{ catalog_url }}">
+  <div class="actions"><button class="primary">今すぐ更新</button></div>
+</form>
+
 <div class="card" id="duty">
   <h2 style="margin-top:0">曜日担当表</h2>
   <form method="post" action="/settings/duty"><div class="row">
