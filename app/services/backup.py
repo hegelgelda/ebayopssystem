@@ -67,13 +67,17 @@ def _stamp_of(name: str) -> datetime | None:
 
 
 def prune(now: datetime | None = None) -> None:
+    """ローカルは直近 local_backup_retention_days 日分、オブジェクトストレージは backup_retention_days 日分を残す。"""
     cfg = get_config()
-    cutoff = (now or datetime.now(JST)) - timedelta(days=cfg.backup_retention_days)
+    now = now or datetime.now(JST)
+    s3 = _s3()
+    local_days = cfg.local_backup_retention_days if s3 is not None else cfg.backup_retention_days
+    local_cutoff = now - timedelta(days=local_days)
     for p in cfg.backups_dir.glob("*"):
         ts = _stamp_of(p.name)
-        if ts and ts < cutoff:
+        if ts and ts < local_cutoff:
             p.unlink(missing_ok=True)
-    s3 = _s3()
+    cutoff = now - timedelta(days=cfg.backup_retention_days)
     if s3 is not None:
         resp = s3.list_objects_v2(Bucket=cfg.s3_bucket, Prefix=f"{cfg.s3_prefix}backups/")
         for obj in resp.get("Contents", []):

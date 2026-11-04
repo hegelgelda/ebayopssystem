@@ -171,3 +171,41 @@ def test_backup_and_restore(env, db, users):
     from app.models import User
     with SessionLocal() as s:
         assert s.scalar(select(User).where(User.display_name == "管理者A")) is not None
+
+
+def test_backup_prune_retention(env, monkeypatch):
+    from datetime import datetime, timedelta
+    from app.config import get_config
+    from app.services import backup
+    from app.timeutil import JST
+    cfg = get_config()
+    cfg.backups_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime(2026, 11, 30, 12, 0, tzinfo=JST)
+
+    def make(days_ago):
+        stamp = (now - timedelta(days=days_ago)).strftime("%Y%m%d-%H%M%S")
+        for name in (f"db-{stamp}.sqlite3", f"images-{stamp}.tar.gz"):
+            (cfg.backups_dir / name).write_bytes(b"x")
+        return stamp
+
+    old, mid, new = make(40), make(10), make(1)
+    # オブジェクトストレージ未設定：VPS内が唯一の保存先なので30日分残す
+    backup.prune(now)
+    left = {p.name for p in cfg.backups_dir.iterdir()}
+    assert f"db-{old}.sqlite3" not in left and f"db-{mid}.sqlite3" in left and f"db-{new}.sqlite3" in left
+
+    # 設定あり：VPS内は3日分、オブジェクトストレージは30日分
+    deleted = []
+
+    class FakeS3:
+        def list_objects_v2(self, Bucket, Prefix):
+            return {"Contents": [{"Key": f"{Prefix}db-{s}.sqlite3"} for s in (old, mid, new)]}
+
+        def delete_object(self, Bucket, Key):
+            deleted.append(Key.rsplit("/", 1)[-1])
+
+    monkeypatch.setattr(backup, "_s3", lambda: FakeS3())
+    backup.prune(now)
+    left = {p.name for p in cfg.backups_dir.iterdir()}
+    assert left == {f"db-{new}.sqlite3", f"images-{new}.tar.gz"}
+    assert deleted == [f"db-{old}.sqlite3"]

@@ -107,7 +107,8 @@ DB マイグレーションは app の起動時に自動で適用されます（
 
 ## バックアップと復旧
 
-- worker が毎日 03:30 JST に DB（SQLite のオンラインバックアップ）と画像（tar.gz）を `/data/backups` に作成し、`S3_*` が設定されていればオブジェクトストレージの `<S3_PREFIX>backups/` にもアップロードします。30日（`BACKUP_RETENTION_DAYS`）を超えたものは両方から削除します。
+- worker が毎日 03:30 JST に DB（SQLite のオンラインバックアップ）と画像（tar.gz）を `/data/backups` に作成し、`S3_*` が設定されていればオブジェクトストレージの `<S3_PREFIX>backups/` にもアップロードします。
+- 保持期間：オブジェクトストレージは30日（`BACKUP_RETENTION_DAYS`）、VPS内は直近3日（`LOCAL_BACKUP_RETENTION_DAYS`）。画像の全量を毎日固めるため、VPS内は短くしてディスクを圧迫しないようにしています。**`S3_*` が未設定の間は VPS 内が唯一の保存先になるため、VPS 内にも30日分を残します**（その間はディスク使用率に注意。80%を超えると #system に通知されます）。
 - 手動：`docker compose exec worker python -m app.cli backup`
 
 ### 復旧手順

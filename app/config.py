@@ -47,7 +47,10 @@ class Config(BaseSettings):
     s3_access_key: str = ""
     s3_secret_key: str = ""
     s3_region: str = "auto"
-    backup_retention_days: int = 30
+    backup_retention_days: int = 30  # オブジェクトストレージ側の保持日数
+    # VPS ローカル（/data/backups）の保持日数。画像の全量 tar を毎日作るため短くする。
+    # オブジェクトストレージ未設定のときは backup_retention_days を使う（唯一の保存先になるため）
+    local_backup_retention_days: int = 3
 
     # eBay CSV の列マッピング（未指定ならリポジトリの config/ebay_csv_columns.json）
     ebay_csv_columns_path: Path = Path(__file__).resolve().parent.parent / "config" / "ebay_csv_columns.json"

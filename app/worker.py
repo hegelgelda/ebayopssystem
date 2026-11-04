@@ -60,7 +60,7 @@ def job_backup() -> None:
         with session_scope() as db:
             health.record(db, "backup", ok=True)
             notify.enqueue_post(db, "system", f"💾 バックアップ完了：{res['db'].rsplit('/', 1)[-1]}"
-                                + ("（オブジェクトストレージに保存）" if res["uploaded"] else "（ローカルのみ）"))
+                                + ("（オブジェクトストレージに保存）" if res["uploaded"] else "（VPS内のみ：オブジェクトストレージ未設定）"))
     except Exception as e:  # noqa: BLE001
         log.exception("backup failed")
         with session_scope() as db:
