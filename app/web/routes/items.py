@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -14,7 +14,7 @@ from app.db import get_db
 from app.models import (
     AuditLog, Category, Comment, Item, ItemStatus as IS, Listing, ListingFormat as LF, Order, Photo, User,
 )
-from app.services import cardinfo, items as item_svc, listing as listing_svc, photos as photo_svc, pricing
+from app.services import cardinfo, items as item_svc, labels as label_svc, listing as listing_svc, photos as photo_svc, pricing
 from app.services.errors import NotFound, ServiceError
 from app.settings_store import get_setting
 from app.web.deps import current_user, flash, render, require_lv2
@@ -69,7 +69,8 @@ def intake_page(request: Request, cert: str = "", done: int | None = None, cat: 
 def _intake_ctx(db: Session, user: User, **kw) -> dict:
     return {"user": user, "today": date.today().isoformat(), "Category": Category, "LF": LF,
             "conditions": get_setting(db, "raw_conditions") or [],
-            "default_formats": get_setting(db, "default_format_by_category") or {}, **kw}
+            "default_formats": get_setting(db, "default_format_by_category") or {},
+            "labels_pending": len(label_svc.pending_items(db)), **kw}
 
 
 @router.get("/api/lookup")
@@ -209,6 +210,45 @@ def add_comment(request: Request, target_type: str = Form(...), target_id: int =
         enqueue_post(db, "orders", f"💬 {user.display_name}：{c.body}", order_id=target_id)
     db.commit()
     return back(request, f"/{target_type}s/{target_id}")
+
+
+# ---- SKUラベル ----
+
+@router.get("/labels")
+def labels_page(request: Request, ids: str = "", psa: int = 0, user: User = Depends(current_user),
+                db: Session = Depends(get_db)):
+    """ids（カンマ区切り、または ids=1&ids=2）を指定するとその在庫、無ければラベル未印刷の在庫。"""
+    raw = request.query_params.getlist("ids") or ([ids] if ids else [])
+    id_list = [int(x) for part in raw for x in part.split(",") if x.strip().isdigit()]
+    pending = label_svc.pending_items(db, include_psa=bool(psa))
+    if id_list:
+        found = {it.id: it for it in db.scalars(select(Item).where(Item.id.in_(id_list)))}
+        items = [found[i] for i in id_list if i in found]
+    else:
+        items = pending
+    return render(request, "labels.html", {"user": user, "items": items, "pending": pending, "psa": psa,
+                                           "selected": bool(id_list), "qr": label_svc.qr_svg})
+
+
+@router.post("/labels/printed")
+async def labels_printed(request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    form = await request.form()
+    id_list = [int(x) for x in form.getlist("item_id") if str(x).isdigit()]
+    items = list(db.scalars(select(Item).where(Item.id.in_(id_list)))) if id_list else []
+    n = label_svc.mark_printed(db, user, items)
+    db.commit()
+    return {"marked": n}
+
+
+@router.get("/scan")
+def scan_open(request: Request, code: str = "", dest: str = Query("item", alias="to"),
+              user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """ラベル（SKU の QR）や PSA のバーコードを読み取って在庫を開く。to=photos で撮影画面。"""
+    item = item_svc.find_by_key(db, code)
+    if not item:
+        flash(request, f"{code} の在庫が見つかりません（SKU または cert番号）", "error")
+        return back(request, "/items")
+    return to(f"/photos/{item.id}" if dest == "photos" else f"/items/{item.id}")
 
 
 # ---- 撮影（F0-2 / F6-4） ----

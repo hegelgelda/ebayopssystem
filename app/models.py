@@ -133,6 +133,7 @@ class Item(Base):
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     quantity_sold: Mapped[int] = mapped_column(Integer, default=0)
     condition: Mapped[str | None] = mapped_column(String(16))  # シングル（未鑑定）の状態
+    label_printed_at: Mapped[datetime | None] = mapped_column(DateTime)  # SKUラベルを印刷した日時
     card_name_jp: Mapped[str | None] = mapped_column(String(200))
     card_name_en: Mapped[str | None] = mapped_column(String(200))
     set_id: Mapped[str | None] = mapped_column(String(32), index=True)

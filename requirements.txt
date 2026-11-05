@@ -13,3 +13,4 @@ apscheduler==3.11.3
 jpholiday==1.0.3
 boto3==1.43.123
 cryptography==50.0.2
+segno==1.6.6

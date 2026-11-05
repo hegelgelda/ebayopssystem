@@ -20,12 +20,22 @@
     <div><button class="primary">絞り込み</button></div>
   </div>
 </form>
-<div id="live" hx-get="" hx-trigger="every 30s" hx-select="#live" hx-swap="outerHTML">
+<div class="card">
+  <video id="scanner" playsinline muted hidden></video>
+  <div class="actions" style="margin-top:0">
+    <button type="button" class="primary" id="scan-btn">📷 ラベル（QR）・PSAバーコードを読み取って開く</button>
+    <a class="btn" href="/labels">🏷 ラベル未印刷の在庫を印刷</a>
+  </div>
+</div>
+<form method="get" action="/labels" id="label-form">
+<div class="actions" style="margin:0 0 8px"><button class="small">☑ 選んだ在庫のラベルを印刷</button></div>
+<div id="live" hx-get="" hx-trigger="every 30s [!document.querySelector('.lbl-cb:checked')]" hx-select="#live" hx-swap="outerHTML">
 <p class="muted small">{{ items|length }}件</p>
 <div class="table-wrap"><table>
-<tr><th></th><th>在庫</th><th>モデルID・数量</th><th>状態</th><th class="hide-sm">保管場所</th><th class="hide-sm">登録日</th></tr>
+<tr><th><input type="checkbox" onclick="document.querySelectorAll('.lbl-cb').forEach(c=>c.checked=this.checked)"></th><th></th><th>在庫</th><th>モデルID・数量</th><th>状態</th><th class="hide-sm">保管場所</th><th class="hide-sm">登録日</th></tr>
 {% for it in items %}
 <tr>
+  <td><input type="checkbox" class="lbl-cb" name="ids" value="{{ it.id }}"></td>
   <td>{{ thumb(it) }}</td>
   <td><a href="/items/{{ it.id }}">{{ it.display_name or '（名称未設定）' }}</a><div class="small muted">{{ it.key_label }} ・ {{ cat_badge(it) }} {{ fmt_badge(it.listing_format) }}{% if it.category == 'psa' %} {{ it.grader }} {{ it.grade }}{% elif it.condition %} {{ it.condition|upper }}{% endif %}</div></td>
   <td class="small">{{ it.model_id or '' }}{% if it.quantity > 1 %}<br>残り {{ it.remaining }}/{{ it.quantity }}{% endif %}</td>
@@ -36,4 +46,15 @@
 {% endfor %}
 </table></div>
 </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script src="/static/scan.js"></script>
+<script>
+document.getElementById('scan-btn').onclick = () => {
+  const v = document.getElementById('scanner'); v.hidden = false;
+  CertScanner.start(v, (code) => { location.href = '/scan?code=' + encodeURIComponent(code); })
+    .catch(e => { alert('カメラを起動できませんでした：' + e); v.hidden = true; });
+};
+</script>
 {% endblock %}

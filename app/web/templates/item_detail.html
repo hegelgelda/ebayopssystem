@@ -18,6 +18,7 @@
   {% if item.status == 'INTAKE' or item.status in ('PHOTOGRAPHED','PRICED','READY') %}<a class="btn" href="/photos/{{ item.id }}">撮影・差し替え</a>{% endif %}
   {% if item.status in ('PHOTOGRAPHED','PRICED') %}<a class="btn" href="/pricing/{{ item.id }}">価格</a>{% endif %}
   {% if draft %}<a class="btn" href="/drafts/{{ draft.id }}">出品下書き</a>{% endif %}
+  <a class="btn" href="/labels?ids={{ item.id }}">🏷 ラベル印刷{% if item.label_printed_at %}（印刷済み）{% endif %}</a>
   {% for o in orders %}<a class="btn" href="/orders/{{ o.id }}">注文 #{{ o.id }} {{ ORDER_LABELS[o.status] }}</a>{% endfor %}
 </div>
 

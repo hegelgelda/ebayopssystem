@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}SKUラベル印刷{% endblock %}
+{% block content %}
+<style>
+  .label-sheet { --w: 64mm; --h: 34mm; --cols: 3; --gap-x: 2mm; --gap-y: 0mm; --mt: 10mm; --ml: 7mm;
+    display: grid; grid-template-columns: repeat(var(--cols), var(--w)); grid-auto-rows: var(--h);
+    column-gap: var(--gap-x); row-gap: var(--gap-y); padding: var(--mt) 0 0 var(--ml);
+    background: #fff; color: #000; width: 210mm; box-sizing: border-box; }
+  .label-sheet.roll { display: block; width: auto; padding: 0; }
+  .label-sheet.roll .lbl { width: var(--w); height: var(--h); page-break-after: always; break-after: page; }
+  .lbl { box-sizing: border-box; padding: 1.5mm 2mm; display: flex; gap: 2mm; align-items: center; overflow: hidden;
+    font-family: system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif; color: #000; outline: 1px dashed #bbb; }
+  .lbl .qr { height: calc(var(--h) - 3mm); aspect-ratio: 1; flex: 0 0 auto; }
+  .lbl .qr svg { width: 100%; height: 100%; display: block; }
+  .lbl .tx { min-width: 0; line-height: 1.2; }
+  .lbl .sku { font-weight: 800; font-size: 11pt; letter-spacing: .3px; }
+  .lbl .nm { font-size: 7pt; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .lbl .meta { font-size: 6.5pt; color: #333; margin-top: .5mm; }
+  .preview-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: #e9ebef; padding: 10px; }
+  @media print {
+    header.top, .no-print, .flash { display: none !important; }
+    main { padding: 0 !important; max-width: none !important; }
+    body { background: #fff !important; }
+    .preview-wrap { border: 0; padding: 0; background: none; overflow: visible; }
+    .lbl { outline: none; }
+  }
+</style>
+
+<div class="no-print">
+  <h1>SKUラベル印刷</h1>
+  <p class="small muted">QRコードの中身は SKU（例 S-00012）です。撮影画面や在庫一覧の「読み取る」ボタンで読むと、その在庫が開きます。</p>
+
+  <div class="card">
+    <div class="row">
+      <div><label>用紙</label><select id="preset">
+        <option value="a4-24">A4シール 24面（3列×8行・64×34mm）</option>
+        <option value="a4-44">A4シール 44面（4列×11行・48×25mm）</option>
+        <option value="roll-62x29">ラベルプリンター 62×29mm（1枚ずつ）</option>
+        <option value="custom">自分で設定</option>
+      </select></div>
+      <div><label>ラベル幅（mm）</label><input type="number" step="0.1" id="w"></div>
+      <div><label>高さ（mm）</label><input type="number" step="0.1" id="h"></div>
+      <div class="sheet-only"><label>列数</label><input type="number" id="cols"></div>
+    </div>
+    <div class="row sheet-only">
+      <div><label>上余白（mm）</label><input type="number" step="0.1" id="mt"></div>
+      <div><label>左余白（mm）</label><input type="number" step="0.1" id="ml"></div>
+      <div><label>横の間隔（mm）</label><input type="number" step="0.1" id="gx"></div>
+      <div><label>縦の間隔（mm）</label><input type="number" step="0.1" id="gy"></div>
+      <div><label>開始位置（何枚目から）</label><input type="number" min="1" id="skip" value="1"></div>
+    </div>
+    <p class="small muted">シール用紙は製品ごとに寸法が違います。お使いの用紙の寸法に合わせて調整してください（設定はこの端末に保存されます）。印刷時はブラウザの「倍率100%」「余白なし」を選んでください。</p>
+    <div class="actions">
+      <button class="primary big" id="print-btn" {% if not items %}disabled{% endif %}>🖨 {{ items|length }}枚を印刷して「印刷済み」にする</button>
+      <button id="print-only" {% if not items %}disabled{% endif %}>印刷だけ（記録しない）</button>
+    </div>
+  </div>
+
+  {% if not selected %}
+  <div class="card">
+    <b>ラベル未印刷の在庫：{{ pending|length }}件</b>（売却済み・取り下げを除く）
+    {% if psa %}<a href="/labels" class="small">PSAを除く</a>{% else %}<a href="/labels?psa=1" class="small">PSAも含める</a>{% endif %}
+    {% if not pending %}<p class="muted">印刷が必要な在庫はありません。</p>{% endif %}
+  </div>
+  {% else %}
+  <p><a href="/labels">← ラベル未印刷の在庫をすべて表示</a></p>
+  {% endif %}
+</div>
+
+<div class="preview-wrap">
+<div class="label-sheet" id="sheet">
+  {% for it in items %}
+  <div class="lbl" data-id="{{ it.id }}">
+    <div class="qr">{{ qr(it.sku) }}</div>
+    <div class="tx">
+      <div class="sku">{{ it.sku }}</div>
+      <div class="nm">{{ it.display_name }}{% if it.card_number and it.category in ('single','psa') %} <span style="white-space:nowrap">{{ it.set_id }}-{{ it.card_number }}</span>{% endif %}</div>
+      <div class="meta">{{ it.category_label }}{% if it.condition %} {{ it.condition|upper }}{% endif %}{% if it.quantity > 1 %} ×{{ it.quantity }}{% endif %} ・ {{ it.storage_box }}{% if it.storage_slot %}-{{ it.storage_slot }}{% endif %}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const PRESETS = {
+    'a4-24': {w: 64, h: 34, cols: 3, mt: 10, ml: 7, gx: 2, gy: 0, roll: false},
+    'a4-44': {w: 48.3, h: 25.4, cols: 4, mt: 8.8, ml: 8.4, gx: 0, gy: 0, roll: false},
+    'roll-62x29': {w: 62, h: 29, cols: 1, mt: 0, ml: 0, gx: 0, gy: 0, roll: true},
+  };
+  const $ = (id) => document.getElementById(id);
+  const sheet = $('sheet');
+  const KEYS = ['w', 'h', 'cols', 'mt', 'ml', 'gx', 'gy'];
+  let roll = false;
+  function load() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem('label_layout') || 'null'); } catch (e) {}
+    const preset = (saved && saved.preset) || 'a4-24';
+    $('preset').value = preset;
+    applyValues(saved && saved.values ? saved.values : PRESETS[preset] || PRESETS['a4-24'], saved ? saved.roll : PRESETS[preset].roll);
+  }
+  function applyValues(v, isRoll) {
+    KEYS.forEach(k => { if (v[k] !== undefined) $(k).value = v[k]; });
+    roll = !!isRoll;
+    render();
+  }
+  function render() {
+    const v = Object.fromEntries(KEYS.map(k => [k, parseFloat($(k).value) || 0]));
+    sheet.style.setProperty('--w', v.w + 'mm'); sheet.style.setProperty('--h', v.h + 'mm');
+    sheet.style.setProperty('--cols', Math.max(1, v.cols)); sheet.style.setProperty('--mt', v.mt + 'mm');
+    sheet.style.setProperty('--ml', v.ml + 'mm'); sheet.style.setProperty('--gap-x', v.gx + 'mm'); sheet.style.setProperty('--gap-y', v.gy + 'mm');
+    sheet.classList.toggle('roll', roll);
+    document.querySelectorAll('.sheet-only').forEach(el => el.hidden = roll);
+    // 使いかけのシール用紙：先頭を空けて開始位置をずらす
+    sheet.querySelectorAll('.lbl.blank').forEach(el => el.remove());
+    const skip = roll ? 0 : Math.max(0, (parseInt($('skip').value, 10) || 1) - 1);
+    for (let i = 0; i < skip; i++) { const b = document.createElement('div'); b.className = 'lbl blank'; b.style.outline = 'none'; sheet.prepend(b); }
+    let ps = document.getElementById('page-style');
+    if (!ps) { ps = document.createElement('style'); ps.id = 'page-style'; document.head.appendChild(ps); }
+    ps.textContent = roll ? `@page { size: ${v.w}mm ${v.h}mm; margin: 0; }` : '@page { size: A4; margin: 0; }';
+    try { localStorage.setItem('label_layout', JSON.stringify({preset: $('preset').value, roll, values: v})); } catch (e) {}
+  }
+  $('preset').addEventListener('change', () => {
+    const p = PRESETS[$('preset').value];
+    if (p) applyValues(p, p.roll); else render();
+  });
+  KEYS.concat(['skip']).forEach(k => $(k).addEventListener('input', () => { if (k !== 'skip') $('preset').value = 'custom'; render(); }));
+  $('print-only').onclick = () => window.print();
+  $('print-btn').onclick = async () => {
+    window.print();
+    if (!confirm('ラベルを正しく印刷できましたか？「OK」で印刷済みとして記録します。')) return;
+    const fd = new FormData();
+    sheet.querySelectorAll('.lbl[data-id]').forEach(el => fd.append('item_id', el.dataset.id));
+    const r = await fetch('/labels/printed', {method: 'POST', body: fd});
+    if (r.ok) location.href = '/labels';
+  };
+  load();
+})();
+</script>
+{% endblock %}

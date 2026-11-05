@@ -3,7 +3,8 @@
 {% block content %}
 {% set f = form or {} %}
 <h1>入荷登録</h1>
-{% if last %}<div class="flash ok">直前の登録：<a href="/items/{{ last.id }}">{{ last.category_label }} {{ last.key_label }} {{ last.display_name }}</a>（{{ last.format_label }}）・ <a href="/photos/{{ last.id }}">このまま撮影する</a></div>{% endif %}
+{% if last %}<div class="flash ok">直前の登録：<a href="/items/{{ last.id }}">{{ last.category_label }} {{ last.key_label }} {{ last.display_name }}</a>（{{ last.format_label }}）・ <a href="/photos/{{ last.id }}">このまま撮影する</a>{% if last.category != 'psa' %} ・ <a href="/labels?ids={{ last.id }}">ラベルを印刷</a>{% endif %}</div>{% endif %}
+{% if labels_pending %}<p class="small"><a href="/labels">🏷 ラベル未印刷 {{ labels_pending }}件 → まとめて印刷</a></p>{% endif %}
 
 <div class="tabs" id="cat-tabs">
   {% for c in Category.ALL %}<button type="button" class="tab" data-cat="{{ c }}">{{ Category.LABELS[c] }}</button>{% endfor %}
@@ -18,6 +19,15 @@
     <div style="flex:0 0 auto"><button type="button" id="lookup-btn">カード情報を取得</button></div>
   </div>
   <div id="lookup-status" class="small muted" style="margin-top:6px"></div>
+  <details id="psa-num-box" style="margin-top:8px"><summary>型番でカードを探す（モデルIDが自動で入らないとき）</summary>
+    <div class="row" style="margin-top:6px">
+      <div><label>型番</label><input type="search" id="psa-num-q" placeholder="201 / 201/165"></div>
+      <div><label>セットで絞り込み（任意）</label><input type="search" id="psa-num-set" placeholder="SV2a / 151 / ポケモンカード151"></div>
+      <div style="flex:0 0 auto"><button type="button" class="primary" id="psa-num-btn">型番で検索</button></div>
+    </div>
+    <div id="psa-num-status" class="small muted" style="margin-top:6px"></div>
+    <div class="cand-list" id="psa-num-cands"></div>
+  </details>
 </div>
 
 {# ---- シングル：型番から検索 ---- #}
@@ -168,6 +178,14 @@
     $('f-info_source').value = js.source;
     const label = {courtyard: '自社Courtyardカタログ', psa: 'PSA', manual: '自動取得できませんでした（手入力）'}[js.source];
     status.textContent = `情報源：${label}` + (js.source !== 'manual' ? '。内容を確認してください' : '');
+    // モデルIDが取れなかったら、型番で候補を出す（PSA の検証ページで型番だけ取れた場合など）
+    if (!$('f-model_id').value) {
+      $('psa-num-box').open = true;
+      if (js.fields && js.fields.card_number) { $('psa-num-q').value = js.fields.card_number; searchNumber('psa-num', () => {
+        if ($('f-info_source').value === 'manual') $('f-info_source').value = 'catalog';
+        document.querySelector('input[name=purchase_price_jpy]').focus(); }); }
+      else { $('psa-num-q').focus(); }
+    }
   }
   $('lookup-btn').onclick = () => lookup($('cert-manual').value);
   $('scan-btn').onclick = () => {
@@ -177,20 +195,28 @@
   };
 
   // ---- シングル：型番検索 ----
-  async function searchNumber() {
-    const n = $('num-q').value.trim(); if (!n) return;
-    const r = await fetch(`/api/catalog/search?number=${encodeURIComponent(n)}&set=${encodeURIComponent($('num-set').value)}`);
-    const js = await r.json(); const box = $('num-cands'); box.innerHTML = '';
-    $('num-status').textContent = js.candidates.length ? `型番 ${js.number}：${js.candidates.length}件。該当するカードを選んでください`
+  // 型番検索（シングル用と PSA 用で同じ処理。p は要素IDの接頭辞）
+  async function searchNumber(p, onPick) {
+    const n = $(p + '-q').value.trim(); if (!n) return;
+    const r = await fetch(`/api/catalog/search?number=${encodeURIComponent(n)}&set=${encodeURIComponent($(p + '-set').value)}`);
+    const js = await r.json(); const box = $(p + '-cands'); box.innerHTML = '';
+    $(p + '-status').textContent = js.candidates.length ? `型番 ${js.number}：${js.candidates.length}件。該当するカードを選んでください`
       : `型番 ${js.number} はカード一覧にありません。下の欄に直接入力してください`;
-    $('f-card_number').value = $('f-card_number').value || js.number;
+    if (!$('f-card_number').value) $('f-card_number').value = js.number;
     js.candidates.forEach(c => box.appendChild(candButton(
       `${c.name_jp || ''}${c.name_en ? ' / ' + c.name_en : ''}\n${c.set_id}-${c.card_number} ${c.set_name_jp || c.set_name || ''}${c.rarity ? ' ・ ' + c.rarity : ''}`,
-      () => { fill(fromCard(c)); $('f-info_source').value = 'catalog'; $('f-condition').focus(); }, c.image_url)));
+      () => { fill(fromCard(c)); onPick(); }, c.image_url)));
     if (js.candidates.length === 1) box.firstChild.click();
   }
-  $('num-btn').onclick = searchNumber;
-  [$('num-q'), $('num-set')].forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchNumber(); } }));
+  function wireSearch(p, onPick) {
+    $(p + '-btn').onclick = () => searchNumber(p, onPick);
+    [$(p + '-q'), $(p + '-set')].forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchNumber(p, onPick); } }));
+  }
+  wireSearch('num', () => { $('f-info_source').value = 'catalog'; $('f-condition').focus(); });
+  wireSearch('psa-num', () => {
+    if ($('f-info_source').value === 'manual') $('f-info_source').value = 'catalog';
+    document.querySelector('input[name=purchase_price_jpy]').focus();
+  });
 
   // ---- パック・BOX：セット検索 ----
   async function searchSets() {
