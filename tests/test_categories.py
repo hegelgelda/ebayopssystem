@@ -392,4 +392,4 @@ def test_draft_preview_shows_photos_in_order(admin_client, db, users):
     item_id = done_id(register(admin_client, cert="81818181"))
     draft_id = ready_item(admin_client, item_id, start="50")
     page = admin_client.get(f"/drafts/{draft_id}").text
-    assert "1枚目＝メイン" in page and "1. 表" in page and "2. 裏" in page and 'id="lightbox"' in page
+    assert "1枚目＝メイン" in page and 'title="1. 表"' in page and 'title="2. 裏"' in page and 'id="lightbox"' in page

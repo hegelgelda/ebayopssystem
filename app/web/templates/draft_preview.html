@@ -11,15 +11,22 @@
   <div class="card preview-photos">
     <h2 style="margin-top:0">写真（eBay に載る順・{{ done|length }}枚）</h2>
     {% if done %}
-    <div class="main-photo"><img src="/img/{{ done[0].processed_path }}" alt="" data-idx="0">
-      <span class="badge ok main-tag">1枚目＝メイン（一覧・検索結果に出る写真）</span></div>
-    <div class="photo-strip">
-      {% for p in done %}
-      <figure><img src="/img/{{ p.processed_path }}" alt="" data-idx="{{ loop.index0 }}" loading="lazy">
-        <figcaption class="small">{{ loop.index }}. {{ kind_label[p.kind] }}<span class="muted"> {{ p.width }}×{{ p.height }}{% if p.bg_removed %} 背景除去{% endif %}</span></figcaption></figure>
-      {% endfor %}
+    {# eBay の商品ページと同じ並び：左に縦のサムネイル、右に約500pxのメイン写真 #}
+    <div class="gallery">
+      <div class="thumbs">
+        {% for p in done %}
+        <img src="/img/{{ p.processed_path }}" alt="" data-idx="{{ loop.index0 }}" loading="lazy"
+             data-cap="{{ loop.index }}/{{ done|length }} {{ kind_label[p.kind] }} {{ p.width }}×{{ p.height }}{% if p.bg_removed %} 背景除去{% endif %}"
+             class="{% if loop.first %}active{% endif %}" title="{{ loop.index }}. {{ kind_label[p.kind] }}">
+        {% endfor %}
+      </div>
+      <div class="main-photo">
+        <img src="/img/{{ done[0].processed_path }}" alt="" id="main-img">
+        <span class="badge ok main-tag" id="main-tag">1枚目＝メイン（一覧・検索結果に出る写真）</span>
+      </div>
     </div>
-    <p class="small muted">写真を押すと拡大します（← → で切り替え、Esc で閉じる）。</p>
+    <p class="small" id="main-cap" style="margin:6px 0 0"></p>
+    <p class="small muted" style="margin:2px 0 0">サムネイルで切り替え、写真を押すと拡大します（← → で切り替え、Esc で閉じる）。</p>
     {% else %}
     <p class="flash error">整形済みの写真がありません。</p>
     {% endif %}
@@ -81,12 +88,23 @@
 <script>
 (function () {
   // 写真の一覧はページ上のサムネイルから作る（本文のテンプレート変数はこのブロックから見えないため）
-  const strip = Array.from(document.querySelectorAll('.photo-strip img[data-idx]'));
-  const srcs = strip.map(el => ({src: el.getAttribute('src'), cap: `${+el.dataset.idx + 1}/${strip.length} ${el.closest('figure').querySelector('figcaption').textContent.replace(/^\d+\.\s*/, '')}`}));
+  const thumbs = Array.from(document.querySelectorAll('.thumbs img[data-idx]'));
+  const srcs = thumbs.map(el => ({src: el.getAttribute('src'), cap: el.dataset.cap}));
+  const mainImg = document.getElementById('main-img'), mainCap = document.getElementById('main-cap'), mainTag = document.getElementById('main-tag');
+  let cur = 0;
+  function select(n) {
+    if (!srcs.length) return;
+    cur = (n + srcs.length) % srcs.length;
+    mainImg.src = srcs[cur].src; mainCap.textContent = srcs[cur].cap;
+    mainTag.hidden = cur !== 0;
+    thumbs.forEach((t, k) => t.classList.toggle('active', k === cur));
+  }
+  thumbs.forEach(t => { t.addEventListener('click', () => select(+t.dataset.idx)); t.addEventListener('mouseenter', () => select(+t.dataset.idx)); });
+  select(0);
   const lb = document.getElementById('lightbox'), img = document.getElementById('lb-img'), cap = document.getElementById('lb-cap');
   let i = 0;
   function show(n) { if (!srcs.length) return; i = (n + srcs.length) % srcs.length; img.src = srcs[i].src; cap.textContent = srcs[i].cap; lb.hidden = false; }
-  document.querySelectorAll('.preview-photos img[data-idx]').forEach(el => el.addEventListener('click', () => show(+el.dataset.idx)));
+  if (mainImg) mainImg.addEventListener('click', () => show(cur));
   lb.querySelector('.lb-prev').onclick = (e) => { e.stopPropagation(); show(i - 1); };
   lb.querySelector('.lb-next').onclick = (e) => { e.stopPropagation(); show(i + 1); };
   lb.addEventListener('click', () => { lb.hidden = true; });
