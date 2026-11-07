@@ -103,7 +103,7 @@ Shipped in a sleeve and top loader.</p>
 </ul>
 """ + _SHIPPING_RETURNS,
         "item_specifics": _specs({
-            "Game": "Pokémon TCG", "Set": "{{ set_name or set_id }}", "Configuration": "Booster Pack",
+            "Game": "Pokémon TCG", "Set": "{{ set_name or set_id }}", "Configuration": "Pack", "Number of Packs": "1",
             "Language": "Japanese", "Manufacturer": "The Pokémon Company"}),
     },
     Category.BOX: {
@@ -118,7 +118,7 @@ Shipped in a sleeve and top loader.</p>
 </ul>
 """ + _SHIPPING_RETURNS,
         "item_specifics": _specs({
-            "Game": "Pokémon TCG", "Set": "{{ set_name or set_id }}", "Configuration": "Booster Box",
+            "Game": "Pokémon TCG", "Set": "{{ set_name or set_id }}", "Configuration": "Box", "Number of Boxes": "1",
             "Language": "Japanese", "Manufacturer": "The Pokémon Company"}),
     },
     Category.BULK: {

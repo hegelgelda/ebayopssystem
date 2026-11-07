@@ -151,7 +151,7 @@ def test_lanes_do_not_mix(admin_client, db, env, users):
                           headers={"accept": "application/json"})
     assert r.status_code == 400 and "別々" in r.json()["error"]
     # 承認待ちもレーンごと
-    r = intake(admin_client, category="pack", card_name_en="151 Pack", quantity="10")
+    r = intake(admin_client, category="pack", card_name_en="151 Pack", set_name="Pokemon Card 151", quantity="10")
     pack_id = done_id(r)
     upload(admin_client, pack_id, "front", n=pack_id)
     upload(admin_client, pack_id, "back", n=pack_id)
@@ -292,3 +292,31 @@ def test_migration_refreshes_only_unedited_templates(env):
     rows = dict(con.execute("SELECT key, body FROM templates").fetchall())
     assert "Business" not in rows["psa.description"] and "DDP" in rows["psa.description"]
     assert rows["box.description"] == "MINE"
+
+
+
+def test_sealed_csv_matches_ebay_templates(admin_client, db, env, users):
+    """BOX・パックは Sealed のカテゴリ・New・*C:Set で出力し、テンプレートに無い列を出さない。"""
+    from tests.test_flow import ebay_template_columns
+    # セット名が無いパック・BOX は登録できない（eBay の必須項目）
+    r = intake(admin_client, category="box", card_name_en="Mystery Box")
+    assert r.status_code == 400
+    box = done_id(intake(admin_client, category="box", card_name_en="Pokemon Card 151 Booster Box", set_id="SV2a",
+                         set_name="Pokémon Card 151"))
+    pack = done_id(intake(admin_client, category="pack", card_name_en="Pokemon Card 151 Booster Pack",
+                          set_name="Pokémon Card 151", quantity="5"))
+    d1 = ready_item(admin_client, box, start="150")
+    d2 = ready_item(admin_client, pack, start="12")
+    r = admin_client.post("/listings/export", data={"draft_id": [str(d1), str(d2)]})
+    batch = r.headers["location"].split("batch=")[1]
+    rows = list(csv.reader(io.StringIO(admin_client.get(f"/exports/{batch}.csv").content.decode("utf-8-sig"))))[1:]
+    header = rows[0]
+    recs = {row[header.index("CustomLabel")]: dict(zip(header, row)) for row in rows[1:]}
+    b, p = recs[f"X-{box:05d}"], recs[f"P-{pack:05d}"]
+    assert b["*Category"] == "261044" and b["*ConditionID"] == "1000" and b["C:Configuration"] == "Box"
+    assert p["*Category"] == "183456" and p["*ConditionID"] == "1000" and p["C:Configuration"] == "Pack"
+    assert b["*C:Set"] == "Pokémon Card 151" and p["*Quantity"] == "5"
+    assert b["CD:Professional Grader - (ID: 27501)"] == "" and b["CD:Card Condition - (ID: 40001)"] == ""
+    assert "Sealed products" in b["*Description"]
+    unknown = [h for h in header if h not in ebay_template_columns() and not h.startswith("*Action(")]
+    assert unknown == [], unknown

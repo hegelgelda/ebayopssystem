@@ -1,0 +1,102 @@
+*Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8)
+CustomLabel
+*Category
+StoreCategory
+*Title
+Subtitle
+Relationship
+RelationshipDetails
+ScheduleTime
+*ConditionID
+*C:Game
+*C:Set
+C:Features
+C:Grade
+C:Language
+C:Character
+C:Manufacturer
+C:Year Manufactured
+C:Age Level
+C:Card Size
+C:Configuration
+C:Number of Cards
+C:Number of Packs
+C:Country of Origin
+C:Vintage
+C:Autograph Authentication
+C:Convention/Event
+C:Material
+C:Autographed
+C:Professional Grader
+C:Signed By
+C:Featured Person/Artist
+C:MPN
+C:California Prop 65 Warning
+C:Illustrator
+C:Autograph Format
+C:Autograph Authentication Number
+C:Certification Number
+C:Number of Boxes
+C:Card Type
+C:Finish
+C:Attribute/MTG:Color
+C:Card Condition
+C:Card Name
+C:Card Number
+PicURL
+GalleryType
+VideoID
+*Description
+*Format
+*Duration
+*StartPrice
+BuyItNowPrice
+BestOfferEnabled
+BestOfferAutoAcceptPrice
+MinimumBestOfferPrice
+*Quantity
+ImmediatePayRequired
+*Location
+ShippingType
+ShippingService-1:Option
+ShippingService-1:Cost
+ShippingService-2:Option
+ShippingService-2:Cost
+*DispatchTimeMax
+PromotionalShippingDiscount
+ShippingDiscountProfileID
+*ReturnsAcceptedOption
+ReturnsWithinOption
+RefundOption
+ShippingCostPaidByOption
+AdditionalDetails
+ShippingProfileName
+ReturnProfileName
+PaymentProfileName
+ProductCompliancePolicyID
+Regional ProductCompliancePolicies
+Product Safety Pictograms
+Product Safety Statements
+Product Safety Component
+Regulatory Document Ids
+Manufacturer Name
+Manufacturer AddressLine1
+Manufacturer AddressLine2
+Manufacturer City
+Manufacturer Country
+Manufacturer PostalCode
+Manufacturer StateOrProvince
+Manufacturer Phone
+Manufacturer Email
+Manufacturer ContactURL
+Responsible Person 1
+Responsible Person 1 Type
+Responsible Person 1 AddressLine1
+Responsible Person 1 AddressLine2
+Responsible Person 1 City
+Responsible Person 1 Country
+Responsible Person 1 PostalCode
+Responsible Person 1 StateOrProvince
+Responsible Person 1 Phone
+Responsible Person 1 Email
+Responsible Person 1 ContactURL

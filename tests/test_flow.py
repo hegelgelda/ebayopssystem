@@ -11,6 +11,14 @@ from sqlalchemy import select
 from tests.conftest import jpeg_bytes
 
 
+def ebay_template_columns() -> set[str]:
+    """Seller Hub からダウンロードしたカテゴリテンプレートの列名（183454 と 183456/261044/183455）。"""
+    cols: set[str] = set()
+    for f in (Path(__file__).parent / "fixtures").glob("ebay_template_*_header.txt"):
+        cols |= {x for x in f.read_text(encoding="utf-8").split("\n") if x}
+    return cols
+
+
 def done_id(r) -> int:
     from urllib.parse import parse_qs, urlparse
     return int(parse_qs(urlparse(r.headers["location"]).query)["done"][0])
@@ -123,7 +131,7 @@ def test_full_flow(admin_client, staff_client, users, env):
     assert rec["CD:Professional Grader - (ID: 27501)"] == "275010" and rec["CD:Grade - (ID: 27502)"] == "275020"
     assert rec["*C:Game"] == "Pokémon TCG" and "C:Certification Number" not in rec
     # eBay のカテゴリテンプレート（183454）に無い列を出していないこと
-    tpl = set((Path(__file__).parent / "fixtures" / "ebay_template_183454_header.txt").read_text(encoding="utf-8").split("\n"))
+    tpl = ebay_template_columns()
     unknown = [h for h in header if h not in tpl and not h.startswith("*Action(")]
     assert unknown == [], unknown
     assert header[0] == "*Action(SiteID=US|Country=JP|Currency=USD|Version=1193|CC=UTF-8)"

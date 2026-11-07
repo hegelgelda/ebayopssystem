@@ -83,13 +83,15 @@ DEFAULTS: dict[str, Any] = {
     # 区分ごとの既定レーン（入荷画面で変更できる）
     "default_format_by_category": {"psa": "auction", "single": "fixed", "pack": "fixed", "box": "fixed",
                                    "bulk": "auction"},
-    # 区分ごとの eBay カテゴリIDとコンディションID（※Seller Hub のテンプレートで要確認）
+    # 区分ごとの eBay カテゴリIDとコンディションID（2026-11-07 Seller Hub のテンプレートで確認）
+    #   183454 CCG Individual Cards（2750 Graded / 4000 Ungraded）、183456 Sealed Packs、261044 Sealed Boxes、
+    #   183455 CCG Mixed Card Lots。パック・BOX の 1000（New）とバルクの 3000（Used）はテンプレートに記載が無く要確認
     "ebay_categories": {
         "psa": {"category_id": "183454", "condition_id": "2750"},
         "single": {"category_id": "183454", "condition_id": "4000"},
         "pack": {"category_id": "183456", "condition_id": "1000"},
-        "box": {"category_id": "183456", "condition_id": "1000"},
-        "bulk": {"category_id": "183454", "condition_id": "4000"},
+        "box": {"category_id": "261044", "condition_id": "1000"},
+        "bulk": {"category_id": "183455", "condition_id": "3000"},
     },
     # シングル（未鑑定）の状態。ebay_id は Condition Descriptor「Card Condition（40001）」の値（2026-11-07 テンプレートで確認）
     "raw_conditions": [

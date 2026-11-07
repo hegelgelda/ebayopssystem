@@ -1,5 +1,5 @@
 {
-  "_comment": "eBay Seller Hub 一括出品（Reports → Uploads → カテゴリテンプレート）の列定義。2026-11-07 に ebay.com の CCG Individual Cards（183454）のテンプレートと照合済み。value は Jinja2 式（使える変数：draft, item, specs, images, defaults, grader_id, grade_id（PSAのみ）, card_condition_id（シングルのみ）, category_id, condition_id）。Action 行の Country は商品の所在国。ビジネスポリシーを使うので DispatchTimeMax / ReturnsAcceptedOption は出力しない。",
+  "_comment": "eBay Seller Hub 一括出品（Reports → Uploads → カテゴリテンプレート）の列定義。2026-11-07 に ebay.com の CCG Individual Cards（183454）、Sealed Packs（183456）、Sealed Boxes（261044）、Mixed Card Lots（183455）のテンプレートと照合済み。value は Jinja2 式（使える変数：draft, item, specs, images, defaults, grader_id, grade_id（PSAのみ）, card_condition_id（シングルのみ）, category_id, condition_id）。Action 行の Country は商品の所在国。ビジネスポリシーを使うので DispatchTimeMax / ReturnsAcceptedOption は出力しない。",
   "encoding": "utf-8-sig",
   "info_rows": [
     [
@@ -49,7 +49,8 @@
       "expand": "item_specifics",
       "header_format": "C:{key}",
       "required": {
-        "Game": "*C:Game"
+        "Game": "*C:Game",
+        "Set": "*C:Set"
       }
     },
     {

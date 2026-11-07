@@ -137,6 +137,8 @@ def register_item(db: Session, user: User, data: dict[str, Any]) -> Item:
     if category in (Category.PACK, Category.BOX, Category.BULK):
         if not (d.get("card_name_jp") or d.get("card_name_en") or d.get("set_name")):
             raise ServiceError("商品名（またはセット名）を入力してください")
+    if category in (Category.PACK, Category.BOX) and not (d.get("set_name") or d.get("set_id")):
+        raise ServiceError("パック・BOX はセット名を入力してください（eBay の必須項目です）")
     if category == Category.BULK:
         quantity = 1  # バルクは1ロットで1出品
 
