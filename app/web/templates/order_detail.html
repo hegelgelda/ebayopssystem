@@ -36,7 +36,7 @@
     {% if gp %}<h3>粗利（Lv2のみ）</h3><dl class="kv small">
       <dt>売上</dt><dd>{{ gp.revenue_jpy|money('JPY') }}（{{ gp.rate }} {{ gp.source }}）</dd>
       <dt>eBay手数料</dt><dd>-{{ gp.fees_jpy|money('JPY') }}</dd><dt>関税</dt><dd>-{{ gp.duty_jpy|money('JPY') }}</dd>
-      <dt>送料</dt><dd>-{{ gp.shipping_jpy|money('JPY') }}</dd><dt>仕入値</dt><dd>-{{ gp.purchase_jpy|money('JPY') }}</dd>
+      <dt>送料</dt><dd>-{{ gp.shipping_jpy|money('JPY') }}{% if not gp.shipping_actual %} <span class="muted">（目安）</span>{% endif %}</dd><dt>仕入値</dt><dd>-{{ gp.purchase_jpy|money('JPY') }}</dd>
       <dt>粗利</dt><dd><b>{{ gp.gross_profit_jpy|money('JPY') }}</b>{% if o.gross_profit_jpy is not none %}（確定）{% else %}（見込み）{% endif %}</dd></dl>{% endif %}
   </div>
 </div>
@@ -51,6 +51,19 @@
   <form method="post" action="/orders/{{ o.id }}/cancel" class="row" onsubmit="return confirm('未払いキャンセルとして記録しますか？')">{{ version_field(o) }}
     <div><label>未払いキャンセルの理由（Lv2）</label><input type="text" name="reason" required></div><div><button class="danger">キャンセルを記録</button></div></form>
   {% endif %}
+</div>
+{% endif %}
+
+{% if o.status in ('AWAITING_SHIPMENT', 'AWAITING_PAYMENT') %}
+<div class="card" id="pick">
+  <h2 style="margin-top:0">ピッキング照合 {% if checks.get('picked') %}<span class="badge ok">照合済み</span>{% endif %}</h2>
+  <p class="small muted">保管場所 <b>{{ item.storage_box or '—' }}{% if item.storage_slot %}-{{ item.storage_slot }}{% endif %}</b> から取り出した在庫のラベル（QR）または PSA のバーコードを読み取ると、この注文の在庫か確かめます（取り違え防止）。</p>
+  <video id="scanner" playsinline muted hidden></video>
+  <form method="post" action="/orders/{{ o.id }}/verify-pick" class="row" id="pick-form">
+    <div><input type="text" name="code" id="pick-code" placeholder="SKU・cert番号（読み取りで自動入力）"></div>
+    <div style="flex:0 0 auto"><button type="button" class="primary" id="pick-scan">📷 読み取る</button> <button>照合</button></div>
+  </form>
+  <p class="small" style="margin-bottom:0"><a href="/orders/{{ o.id }}/packing-slip" target="_blank">🖨 納品書（英語・同梱用）を印刷</a></p>
 </div>
 {% endif %}
 
@@ -90,6 +103,14 @@
       <div><label>追跡番号</label><input type="text" name="number" inputmode="numeric" required></div>
       <div><button class="primary">確認へ</button></div></form>
   {% else %}<p class="muted">支払完了後に追跡番号を入力できます。</p>{% endif %}
+</div>
+
+<div class="card" id="cost">
+  <h2 style="margin-top:0">送料（実費）</h2>
+  <form method="post" action="/orders/{{ o.id }}/shipping-cost" class="row">
+    <div><label>実際に払った送料（円）{% if o.shipping_cost_jpy is none %}<span class="small muted"> — 未入力の間は設定の目安で粗利を計算</span>{% endif %}</label>
+      <input type="text" name="cost" inputmode="numeric" value="{{ o.shipping_cost_jpy if o.shipping_cost_jpy is not none else '' }}" placeholder="例：3850"></div>
+    <div><button>保存</button></div></form>
 </div>
 
 <div class="card" id="checklist">
@@ -154,4 +175,20 @@
 
 <h2>操作履歴</h2>
 {% include "partials/log_table.html" %}
+{% endblock %}
+
+{% block scripts %}
+{% if o.status in ('AWAITING_SHIPMENT', 'AWAITING_PAYMENT') %}
+<script src="{{ static_url('scan.js') }}"></script>
+<script>
+document.getElementById('pick-scan').onclick = () => {
+  const v = document.getElementById('scanner'); v.hidden = false;
+  CertScanner.start(v, (code) => {
+    CertScanner.stop(v); v.hidden = true;
+    document.getElementById('pick-code').value = code;
+    document.getElementById('pick-form').submit();
+  }).catch(e => { alert('カメラを起動できませんでした：' + e); v.hidden = true; });
+};
+</script>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Packing slip #{{ o.id }}</title>
+<style>
+  @page { size: A5; margin: 12mm; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #111; background: #fff; margin: 0; }
+  .slip { max-width: 148mm; margin: 0 auto; padding: 8mm 0; }
+  h1 { font-size: 20pt; margin: 0 0 2mm; letter-spacing: .5px; }
+  .sub { color: #555; font-size: 9pt; margin-bottom: 6mm; }
+  table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+  th, td { text-align: left; padding: 2mm 1mm; border-bottom: 1px solid #ccc; vertical-align: top; }
+  th { font-size: 8.5pt; color: #555; text-transform: uppercase; }
+  .kv td:first-child { color: #555; width: 34mm; }
+  .thanks { margin-top: 8mm; font-size: 10.5pt; line-height: 1.5; }
+  .bar { display: flex; gap: 8px; justify-content: center; margin: 12px; }
+  .bar button, .bar a { font: inherit; padding: 8px 14px; border: 1px solid #999; border-radius: 8px; background: #f4f4f4; color: #111; text-decoration: none; cursor: pointer; }
+  @media print { .bar { display: none; } .slip { padding: 0; } }
+</style></head>
+<body>
+<div class="bar"><button onclick="window.print()">🖨 印刷</button><a href="/orders/{{ o.id }}">注文に戻る</a></div>
+<div class="slip">
+  <h1>{{ shop }}</h1>
+  <div class="sub">Packing slip</div>
+  <table class="kv">
+    <tr><td>Order</td><td>{{ o.ebay_order_id or ('#' ~ o.id) }}</td></tr>
+    <tr><td>Buyer</td><td>{{ o.buyer_username or '' }}</td></tr>
+    <tr><td>Order date</td><td>{{ o.sold_at|jst('%Y-%m-%d') }}</td></tr>
+    {% if o.listing and o.listing.ebay_item_id %}<tr><td>eBay item</td><td>{{ o.listing.ebay_item_id }}</td></tr>{% endif %}
+  </table>
+  <table style="margin-top:6mm">
+    <tr><th>Item</th><th>SKU</th><th style="text-align:right">Qty</th></tr>
+    <tr><td>{{ o.listing.title if o.listing else (item.card_name_en or item.display_name) }}
+      {% if item.category == 'psa' and item.cert_number %}<br><small>PSA cert {{ item.cert_number }}</small>{% endif %}</td>
+      <td>{{ item.sku }}</td><td style="text-align:right">{{ o.quantity }}</td></tr>
+  </table>
+  <div class="thanks">
+    <b>Thank you for your purchase!</b><br>
+    If anything is wrong with your order, please message us on eBay before opening a case — we will make it right.<br>
+    If you are happy with your item, we would really appreciate your positive feedback.
+  </div>
+</div>
+</body></html>

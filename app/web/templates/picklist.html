@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}ピッキングリスト{% endblock %}
+{% block content %}
+<style>
+  .pick td, .pick th { font-size: 11pt; }
+  .pick .box { font-size: 14pt; font-weight: 800; white-space: nowrap; }
+  .pick .chk { width: 8mm; height: 8mm; border: 1.5px solid #000; display: inline-block; }
+  @media print {
+    header.top, .no-print, .flash { display: none !important; }
+    main { padding: 0 !important; max-width: none !important; }
+    body { background: #fff !important; color: #000 !important; }
+    .table-wrap { overflow: visible !important; border: 0 !important; }
+    .pick tr { break-inside: avoid; }
+  }
+</style>
+<div class="no-print">
+  <h1>ピッキングリスト</h1>
+  <p class="small muted">保管場所の順に並んでいます（{{ '発送待ちすべて' if scope == 'all' else '期限切れ・今日が期限' }}）。取り出したら注文ページでラベルを読み取って照合してください。</p>
+  <div class="actions"><button class="primary" onclick="window.print()">🖨 印刷</button> <a class="btn" href="/shipping">発送へ戻る</a></div>
+</div>
+<p class="small">ピッキングリスト {{ rows|length }}件 ・ 印刷 {{ printed_at|jst }}</p>
+<div class="table-wrap"><table class="pick">
+<tr><th>✓</th><th>保管場所</th><th>SKU / cert</th><th>商品</th><th>数</th><th>注文</th><th>国</th><th>期限</th></tr>
+{% for o in rows %}
+<tr>
+  <td><span class="chk"></span></td>
+  <td class="box">{{ o.item.storage_box or '—' }}{% if o.item.storage_slot %}-{{ o.item.storage_slot }}{% endif %}</td>
+  <td><b>{{ o.item.key_label }}</b></td>
+  <td>{{ o.item.display_name }}{% if o.item.category == 'psa' %} PSA {{ o.item.grade }}{% endif %}</td>
+  <td><b>{{ o.quantity }}</b></td>
+  <td>#{{ o.id }}</td>
+  <td>{{ o.ship_country }}</td>
+  <td>{{ o.ship_by|jst('%m-%d') }}</td>
+</tr>
+{% else %}<tr><td colspan="8" class="muted">対象の発送はありません。</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

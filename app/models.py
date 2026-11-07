@@ -325,6 +325,7 @@ class Order(Base):
     fx_rate_jpy: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
     fx_source: Mapped[str | None] = mapped_column(String(64))
     gross_profit_jpy: Mapped[int | None] = mapped_column(Integer)
+    shipping_cost_jpy: Mapped[int | None] = mapped_column(Integer)  # 実際に払った送料（未入力なら設定の目安を使う）
     status: Mapped[str] = mapped_column(String(20), default=OrderStatus.AWAITING_PAYMENT, index=True)
     status_before_case: Mapped[str | None] = mapped_column(String(20))
     sold_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

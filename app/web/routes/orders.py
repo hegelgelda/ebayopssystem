@@ -17,6 +17,7 @@ from app.services import notify, order_import, orders as order_svc
 from app.services.errors import ServiceError
 from app.settings_store import get_setting
 from app.web.deps import current_user, flash, render, require_lv2
+from app.timeutil import utcnow
 from app.web.routes.common import form_dt_jst, form_int, to
 
 router = APIRouter()
@@ -61,6 +62,85 @@ async def orders_import(request: Request, file: UploadFile = File(...), user: Us
     for label, err in res.skipped:
         flash(request, f"{label}：{err}", "error")
     return to("/orders?status=open")
+
+
+@router.get("/shipping")
+def shipping_page(request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """発送ページ：今日やる発送を期限順に。"""
+    q = order_svc.shipping_queue(db)
+    keys = [c["key"] for c in get_setting(db, "checklist_items")]
+    ids = [o.id for k in ("overdue", "today", "later") for o in q[k]]
+    done: dict[int, set[str]] = {}
+    for c in db.scalars(select(ChecklistItem).where(ChecklistItem.order_id.in_(ids or [0]))):
+        done.setdefault(c.order_id, set()).add(c.item_key)
+    return render(request, "shipping.html", {"user": user, "q": q, "done": done, "nkeys": len(keys)})
+
+
+@router.get("/shipping/picklist")
+def shipping_picklist(request: Request, scope: str = "today", user: User = Depends(current_user),
+                      db: Session = Depends(get_db)):
+    """ピッキングリスト（印刷用）：保管場所の順に並べる。"""
+    q = order_svc.shipping_queue(db)
+    rows = q["overdue"] + q["today"] + (q["later"] if scope == "all" else [])
+    return render(request, "picklist.html", {"user": user, "rows": sorted(rows, key=order_svc.pick_sort_key),
+                                             "scope": scope, "printed_at": utcnow()})
+
+
+@router.get("/shipping/scan")
+def shipping_scan(request: Request, code: str = "", user: User = Depends(current_user),
+                  db: Session = Depends(get_db)):
+    """発送ページでラベルを読み取る → その在庫の発送待ちの注文を開き、照合済みにする。"""
+    from app.services import items as item_svc
+    item = item_svc.find_by_key(db, code)
+    if not item:
+        flash(request, f"{code} の在庫が見つかりません", "error")
+        return to("/shipping")
+    o = db.scalar(select(Order).where(Order.item_id == item.id, Order.status.in_(
+        [OS.AWAITING_SHIPMENT, OS.AWAITING_PAYMENT])).order_by(Order.ship_by.is_(None), Order.ship_by, Order.id))
+    if o is None:
+        flash(request, f"{item.key_label} {item.display_name} の発送待ちの注文はありません", "error")
+        return to("/shipping")
+    order_svc.verify_pick(db, user, o, code)
+    db.commit()
+    flash(request, f"✅ {item.key_label} を照合しました（ピッキング済み）")
+    return to(f"/orders/{o.id}")
+
+
+@router.get("/orders/{order_id}/packing-slip")
+def packing_slip(order_id: int, request: Request, user: User = Depends(current_user),
+                 db: Session = Depends(get_db)):
+    """同梱用の納品書（英語・印刷用）。"""
+    o = order_svc.get_order(db, order_id)
+    return render(request, "packing_slip.html", {"user": user, "o": o, "item": o.item,
+                                                 "shop": get_setting(db, "shop_name") or "Torelis"})
+
+
+@router.post("/orders/{order_id}/verify-pick")
+def order_verify_pick(order_id: int, request: Request, code: str = Form(""), user: User = Depends(current_user),
+                      db: Session = Depends(get_db)):
+    o = _o(db, order_id)
+    try:
+        order_svc.verify_pick(db, user, o, code)
+    except ServiceError as e:
+        db.commit()  # 取り違えの記録は残す
+        flash(request, str(e), "error")
+        return to(f"/orders/{o.id}#pick")
+    db.commit()
+    flash(request, "✅ 注文の在庫と一致しました（ピッキング済みにしました）")
+    return to(f"/orders/{o.id}#pick")
+
+
+@router.post("/orders/{order_id}/shipping-cost")
+def order_shipping_cost(order_id: int, request: Request, cost: str = Form(""), user: User = Depends(current_user),
+                        db: Session = Depends(get_db)):
+    o = _o(db, order_id)
+    raw = cost.replace(",", "").replace("円", "").strip()
+    if raw and not raw.isdigit():
+        raise ServiceError("送料は円の整数で入力してください")
+    order_svc.set_shipping_cost(db, user, o, int(raw) if raw else None)
+    db.commit()
+    flash(request, "送料を記録しました" if raw else "送料をクリアしました（設定の目安を使います）")
+    return to(f"/orders/{o.id}#tracking")
 
 
 @router.get("/orders/{order_id}")

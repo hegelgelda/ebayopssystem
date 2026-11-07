@@ -304,6 +304,76 @@ def toggle_checklist(db: Session, user: User, o: Order, key: str, checked: bool)
               after={"key": key})
 
 
+# ---- 発送サポート ----
+
+def verify_pick(db: Session, user: User, o: Order, code: str) -> None:
+    """取り出した在庫のラベル（SKU の QR／PSA のバーコード）を読み取り、注文の在庫と同じか確かめる。"""
+    from app.services import items as item_svc
+    code = (code or "").strip()
+    if not code:
+        raise ServiceError("ラベルを読み取るか、SKU・cert番号を入力してください")
+    found = item_svc.find_by_key(db, code)
+    if found is None:
+        raise ServiceError(f"{code} の在庫が見つかりません")
+    if found.id != o.item_id:
+        audit.log(db, audit.Actor.user(user), "order", o.id, "order.pick_mismatch",
+                  after={"scanned": found.key_label, "expected": o.item.key_label})
+        raise ServiceError(f"⚠️ 別の在庫です：読み取ったのは {found.key_label} {found.display_name}。"
+                           f"この注文は {o.item.key_label} {o.item.display_name} です")
+    audit.log(db, audit.Actor.user(user), "order", o.id, "order.pick_verified", after={"code": code})
+    if db.scalar(select(ChecklistItem).where(ChecklistItem.order_id == o.id,
+                                             ChecklistItem.item_key == "picked")) is None:
+        keys = [c["key"] for c in get_setting(db, "checklist_items")]
+        if "picked" in keys:
+            db.add(ChecklistItem(order_id=o.id, item_key="picked", checked_by=user.id))
+
+
+def set_shipping_cost(db: Session, user: User, o: Order, cost: int | None) -> None:
+    if cost is not None and (cost < 0 or cost > 1_000_000):
+        raise ServiceError("送料は0〜1,000,000円で入力してください")
+    if cost == o.shipping_cost_jpy:
+        return
+    audit.log(db, audit.Actor.user(user), "order", o.id, "order.shipping_cost",
+              before={"shipping_cost_jpy": o.shipping_cost_jpy}, after={"shipping_cost_jpy": cost})
+    o.shipping_cost_jpy = cost
+    o.version += 1
+    if o.status == OS.COMPLETED:
+        finalize(db, o)  # 確定済みの粗利も入れ直す
+
+
+def shipping_queue(db: Session, now: datetime | None = None) -> dict[str, list[Order]]:
+    """発送ページ：期限切れ／今日／明日以降の発送待ち、eBayに追跡番号が未登録の発送済み。"""
+    from app.timeutil import to_jst
+    now = now or utcnow()
+    today = to_jst(now).date()  # type: ignore[union-attr]
+    waiting = db.scalars(select(Order).where(Order.status == OS.AWAITING_SHIPMENT)).all()
+    out: dict[str, list[Order]] = {"overdue": [], "today": [], "later": [], "unpaid": [], "not_uploaded": []}
+    for o in sorted(waiting, key=lambda x: x.ship_by or datetime.max):
+        if o.ship_by and o.ship_by <= now:
+            out["overdue"].append(o)
+        elif o.ship_by and to_jst(o.ship_by).date() <= today:  # type: ignore[union-attr]
+            out["today"].append(o)
+        else:
+            out["later"].append(o)
+    out["unpaid"] = list(db.scalars(select(Order).where(Order.status == OS.AWAITING_PAYMENT)
+                                    .order_by(Order.sold_at)).all())
+    out["not_uploaded"] = list(db.scalars(
+        select(Order).join(Shipment, Shipment.order_id == Order.id)
+        .where(Order.status == OS.SHIPPED, Shipment.deleted.is_(False), Shipment.ebay_upload_status != "uploaded")
+        .order_by(Order.id)).unique().all())
+    return out
+
+
+def pick_sort_key(o: Order) -> tuple:
+    """ピッキングリストは保管場所の順（ボックス→スロット）。"""
+    it = o.item
+    return (it.storage_box or "~", _natural(it.storage_slot), it.sku or "")
+
+
+def _natural(s: str | None) -> tuple:
+    return tuple(int(t) if t.isdigit() else t for t in re.split(r"(\d+)", s or ""))
+
+
 def gross_profit(db: Session, o: Order) -> dict[str, Any] | None:
     """粗利（円）。為替は落札日の USD/JPY。"""
     if o.total_amount is None or o.item.purchase_price_jpy is None:  # 仕入値は1個あたり
@@ -318,11 +388,13 @@ def gross_profit(db: Session, o: Order) -> dict[str, Any] | None:
     ebay_fees = (amt * Decimal(str(fees["ebay_final_value_rate"] + fees["international_fee_rate"]))
                  + Decimal(str(fees["per_order_fee_usd"]))) * rate
     duty = amt * Decimal(str(fees["duty_rate"])) * rate
-    ship = Decimal(str(fees["shipping_cost_jpy"]))
+    actual_ship = o.shipping_cost_jpy is not None
+    ship = Decimal(o.shipping_cost_jpy) if actual_ship else Decimal(str(fees["shipping_cost_jpy"]))
     purchase = o.item.purchase_price_jpy * (o.quantity or 1)
     gp = revenue - ebay_fees - duty - ship - Decimal(purchase)
     return {"rate": rate, "source": src, "revenue_jpy": int(revenue), "fees_jpy": int(ebay_fees),
-            "duty_jpy": int(duty), "shipping_jpy": int(ship), "purchase_jpy": purchase,
+            "duty_jpy": int(duty), "shipping_jpy": int(ship), "shipping_actual": actual_ship,
+            "purchase_jpy": purchase,
             "gross_profit_jpy": int(gp)}
 
 

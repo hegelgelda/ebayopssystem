@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% from "macros.html" import thumb, deadline %}
+{% block title %}発送{% endblock %}
+{% block content %}
+<h1>発送</h1>
+<div class="card">
+  <video id="scanner" playsinline muted hidden></video>
+  <div class="actions" style="margin-top:0">
+    <a class="btn primary" href="/shipping/picklist">🖨 ピッキングリスト（期限切れ・今日の分）</a>
+    <a class="btn" href="/shipping/picklist?scope=all">🖨 発送待ちすべて</a>
+    <button type="button" id="scan-btn">📷 ラベルを読み取って注文を開く</button>
+  </div>
+  <p class="small muted" style="margin-bottom:0">流れ：ピッキングリストで在庫を取り出す → 注文を開いてラベルを読み取り照合 → 梱包・納品書を同梱 → 追跡番号と送料を入力 → Seller Hub に追跡番号を登録</p>
+</div>
+
+{% macro rows(list, empty) %}
+<div class="table-wrap"><table>
+<tr><th></th><th>注文</th><th>保管場所</th><th>配送先</th><th>発送期限</th><th>作業</th></tr>
+{% for o in list %}{% set n = (done.get(o.id) or [])|length %}
+<tr>
+  <td>{{ thumb(o.item) }}</td>
+  <td><a href="/orders/{{ o.id }}">#{{ o.id }} {{ o.item.display_name }}{% if o.quantity > 1 %} <b>×{{ o.quantity }}</b>{% endif %}</a>
+    <div class="small muted">{{ o.item.key_label }} ・ {{ o.buyer_username or '' }}</div></td>
+  <td><b>{{ o.item.storage_box or '—' }}{% if o.item.storage_slot %}-{{ o.item.storage_slot }}{% endif %}</b></td>
+  <td>{{ o.ship_country }}</td>
+  <td class="small">{{ deadline(o.ship_by) }}</td>
+  <td class="small">{% if n >= nkeys %}<span class="badge ok">完了 {{ n }}/{{ nkeys }}</span>{% elif n %}<span class="badge warn">{{ n }}/{{ nkeys }}</span>{% else %}未着手{% endif %}
+    ・ <a href="/orders/{{ o.id }}/packing-slip" target="_blank">納品書</a></td>
+</tr>
+{% else %}<tr><td colspan="6" class="muted">{{ empty }}</td></tr>{% endfor %}
+</table></div>
+{% endmacro %}
+
+<div id="live" hx-get="" hx-trigger="every 60s" hx-select="#live" hx-swap="outerHTML">
+{% if q.overdue %}<h2 style="color:var(--err)">⛔ 発送期限切れ（{{ q.overdue|length }}）</h2>{{ rows(q.overdue, '') }}{% endif %}
+<h2>📮 今日が期限（{{ q.today|length }}）</h2>
+{{ rows(q.today, '今日が期限の発送はありません。') }}
+<h2>明日以降（{{ q.later|length }}）</h2>
+{{ rows(q.later, '発送待ちはありません。') }}
+
+{% if q.not_uploaded %}
+<h2>📝 追跡番号がeBayに未登録（{{ q.not_uploaded|length }}）</h2>
+<div class="table-wrap"><table><tr><th>注文</th><th>追跡番号</th></tr>
+{% for o in q.not_uploaded %}{% set s = o.active_shipment() %}
+<tr><td><a href="/orders/{{ o.id }}#tracking">#{{ o.id }} {{ o.item.display_name }}</a><div class="small muted">{{ o.item.key_label }}</div></td>
+  <td class="small">{{ s.carrier if s else '' }} {{ s.tracking_number if s else '' }}</td></tr>
+{% endfor %}</table></div>
+{% endif %}
+
+{% if q.unpaid %}
+<h2>支払待ち（{{ q.unpaid|length }}）<span class="small muted">— 支払が済むと上に移ります。取り置いておく在庫</span></h2>
+<div class="table-wrap"><table><tr><th>注文</th><th>保管場所</th><th>支払期限</th></tr>
+{% for o in q.unpaid %}
+<tr><td><a href="/orders/{{ o.id }}">#{{ o.id }} {{ o.item.display_name }}</a><div class="small muted">{{ o.item.key_label }}</div></td>
+  <td>{{ o.item.storage_box or '—' }}{% if o.item.storage_slot %}-{{ o.item.storage_slot }}{% endif %}</td>
+  <td class="small">{{ deadline(o.payment_due) }}</td></tr>
+{% endfor %}</table></div>
+{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ static_url('scan.js') }}"></script>
+<script>
+document.getElementById('scan-btn').onclick = () => {
+  const v = document.getElementById('scanner'); v.hidden = false;
+  CertScanner.start(v, (code) => { location.href = '/shipping/scan?code=' + encodeURIComponent(code); })
+    .catch(e => { alert('カメラを起動できませんでした：' + e); v.hidden = true; });
+};
+</script>
+{% endblock %}
