@@ -32,7 +32,7 @@
 </table></div></details>
 {% endblock %}
 {% block scripts %}
-<script src="/static/scan.js"></script>
+<script src="{{ static_url('scan.js') }}"></script>
 <script>
 document.getElementById('scan-btn').onclick = () => {
   const v = document.getElementById('scanner'); v.hidden = false;

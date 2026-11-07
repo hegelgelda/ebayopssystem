@@ -82,3 +82,24 @@ def render(request: Request, name: str, ctx: dict[str, Any], status_code: int = 
     base = {"request": request, "flashes": flashes, "user": ctx.get("user")}
     base.update(ctx)
     return templates.TemplateResponse(request, name, base, status_code=status_code)
+
+
+_STATIC_DIR = TEMPLATES_DIR.parent / "static"
+_static_versions: dict[str, str] = {}
+
+
+def static_url(path: str) -> str:
+    """URL for a static asset with a content-hash query, so browsers fetch the new file after a deploy."""
+    ver = _static_versions.get(path)
+    if ver is None:
+        import hashlib
+
+        try:
+            ver = hashlib.sha256((_STATIC_DIR / path).read_bytes()).hexdigest()[:10]
+        except OSError:
+            ver = "0"
+        _static_versions[path] = ver
+    return f"/static/{path}?v={ver}"
+
+
+templates.env.globals["static_url"] = static_url
