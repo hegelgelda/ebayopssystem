@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -17,6 +18,8 @@ from app.web.deps import NotAuthenticated, flash, render
 from app.web.routes import admin, auth, items, orders, pricing_listing
 
 STATIC_DIR = Path(__file__).parent / "static"
+# Safari の WebAssembly 読み込みには application/wasm が必要（Python のバージョンに依らず登録しておく）
+mimetypes.add_type("application/wasm", ".wasm")
 log = logging.getLogger(__name__)
 
 

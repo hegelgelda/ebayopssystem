@@ -62,3 +62,12 @@ def test_scan_opens_item(admin_client, db, users):
 def test_psa_intake_has_number_search(admin_client, users):
     page = admin_client.get("/intake").text
     assert 'id="psa-num-q"' in page and "wireSearch('psa-num'" in page
+
+
+def test_scanner_assets_are_served(app, admin_client):
+    """iPhone Safari 用の読み取り（zxing-cpp の WebAssembly）を自分のサーバーから配信できること。"""
+    r = admin_client.get("/static/vendor/zxing_reader-3.1.6.wasm")
+    assert r.status_code == 200 and r.headers["content-type"] == "application/wasm"
+    assert admin_client.get("/static/vendor/barcode-detector-3.2.3-ponyfill.js").status_code == 200
+    js = admin_client.get("/static/scan.js").text
+    assert "/static/vendor/zxing_reader-3.1.6.wasm" in js and "zxing-library" not in js
