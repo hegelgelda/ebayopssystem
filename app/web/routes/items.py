@@ -84,7 +84,9 @@ def api_lookup(cert: str, user: User = Depends(current_user), db: Session = Depe
                                         "card_name": existing.card_name_jp or existing.card_name_en,
                                         "model_id": existing.model_id, "url": f"/items/{existing.id}"}}
     res = cardinfo.lookup(db, c)
+    db.commit()  # PSA API の成否（連続失敗の検知）を記録
     return {"cert": c, "source": res["source"], "fields": res["fields"], "errors": res["errors"],
+            "matched": res.get("matched"), "psa": res.get("psa"),
             "candidates": [_cand(x) for x in res["candidates"]]}
 
 

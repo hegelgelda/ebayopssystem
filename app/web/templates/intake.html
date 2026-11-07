@@ -177,7 +177,13 @@
     fill(js.fields || {});
     $('f-info_source').value = js.source;
     const label = {courtyard: '自社Courtyardカタログ', psa: 'PSA', manual: '自動取得できませんでした（手入力）'}[js.source];
-    status.textContent = `情報源：${label}` + (js.source !== 'manual' ? '。内容を確認してください' : '');
+    let msg = `情報源：${label}`;
+    if (js.matched) msg += `。カード一覧で ${js.matched} を特定しました`;
+    if (js.psa && js.psa.variety) msg += `（PSA の表記：${js.psa.variety}）`;
+    if (js.source !== 'manual') msg += '。内容を確認してください';
+    if (js.errors && js.errors.length && js.source === 'manual') msg += '\n' + js.errors.join('\n');
+    status.textContent = msg;
+    status.style.whiteSpace = 'pre-line';
     // モデルIDが取れなかったら、型番で候補を出す（PSA の検証ページで型番だけ取れた場合など）
     if (!$('f-model_id').value) {
       $('psa-num-box').open = true;

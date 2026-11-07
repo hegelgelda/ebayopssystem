@@ -209,3 +209,53 @@ def test_backup_prune_retention(env, monkeypatch):
     left = {p.name for p in cfg.backups_dir.iterdir()}
     assert left == {f"db-{new}.sqlite3", f"images-{new}.tar.gz"}
     assert deleted == [f"db-{old}.sqlite3"]
+
+
+def test_psa_api_lookup_fills_grade_pop_and_model(db, env, monkeypatch):
+    """PSA API の結果でグレード・Population が埋まり、Brand のセットIDと型番からカード一覧のカードを特定する。"""
+    import httpx
+    from app.config import get_config
+    from app.models import ApiHealth
+    from app.services import cardinfo, importers
+    cards = env / "cards.csv"
+    cards.write_text("model_id,set_name,name_jp,name_en\nSV4M-78,Future Flash,テツノコウベ,Iron Jugulis\n"
+                     "SV4K-78,Ancient Roar,テツノコウベ,Iron Jugulis\n", encoding="utf-8")
+    importers.import_cards(db, cards)
+    db.commit()
+    monkeypatch.setattr(get_config(), "psa_api_token", "tok")
+
+    class R:
+        def __init__(self, code, js=None):
+            self.status_code, self._js = code, js
+
+        def json(self):
+            return self._js
+
+        def raise_for_status(self):
+            pass
+
+    ok = {"PSACert": {"CertNumber": "12345678", "Year": "2023", "Brand": "POKEMON JAPANESE SV4M-FUTURE FLASH",
+                      "CardNumber": "078", "Subject": "IRON JUGULIS", "Variety": "ART RARE",
+                      "CardGrade": "GEM MT 10", "TotalPopulation": 1234},
+          "IsValidRequest": True, "ServerMessage": "Request successful"}
+    monkeypatch.setattr(httpx, "get", lambda url, **k: R(200, ok))
+    res = cardinfo.lookup(db, "12345678")
+    f = res["fields"]
+    assert res["source"] == "psa" and res["matched"] == "SV4M-78"
+    assert f["grade"] == "10" and f["psa_population"] == 1234 and f["year"] == "2023"
+    assert f["model_id"] == "SV4M-78" and f["card_name_jp"] == "テツノコウベ" and f["set_name"] == "Future Flash"
+    assert res["psa"]["variety"] == "ART RARE"
+
+    # トークンが無効・上限・見つからない は理由を返す
+    for code, word in ((401, "トークン"), (429, "上限"), (404, "見つかりません")):
+        monkeypatch.setattr(httpx, "get", lambda url, code=code, **k: R(code) if "api.psacard" in url else R(403))
+        res = cardinfo.lookup(db, "12345678")
+        assert res["source"] == "manual" and any(word in e for e in res["errors"]), res["errors"]
+    db.commit()
+    assert db.get(ApiHealth, "psa-api").consecutive_failures >= 1
+
+    # トークンが無く、PSA のサイトが Bot 対策で 403 のとき
+    monkeypatch.setattr(get_config(), "psa_api_token", "")
+    monkeypatch.setattr(httpx, "get", lambda url, **k: R(403))
+    res = cardinfo.lookup(db, "12345678")
+    assert any("PSA_API_TOKEN" in e for e in res["errors"])

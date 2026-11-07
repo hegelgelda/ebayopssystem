@@ -48,21 +48,69 @@ def _from_card_catalog(db: Session, model_id: str | None) -> dict[str, Any]:
             "card_name_jp": cc.name_jp, "card_name_en": cc.name_en, "set_name": cc.set_name}
 
 
+class PSALookupError(Exception):
+    """PSA API の失敗（利用者に見せる日本語の理由つき）。"""
+
+
+def _ci(d: dict, *names):
+    """大文字小文字・区切りの違いを気にせずキーを引く（PSA の応答の表記ゆれ対策）。"""
+    norm = {re.sub(r"[^a-z]", "", k.lower()): v for k, v in (d or {}).items()}
+    for n in names:
+        v = norm.get(re.sub(r"[^a-z]", "", n.lower()))
+        if v not in (None, ""):
+            return v
+    return None
+
+
 def _psa_api(cert: str) -> dict[str, Any] | None:
+    """PSA Public API（無料は1日100回）。トークンは .env の PSA_API_TOKEN。"""
     token = get_config().psa_api_token
     if not token:
         return None
     r = httpx.get(f"https://api.psacard.com/publicapi/cert/GetByCertNumber/{cert}",
-                  headers={"Authorization": f"bearer {token}"}, timeout=8)
+                  headers={"Authorization": f"bearer {token}"}, timeout=10)
+    if r.status_code in (401, 403):
+        raise PSALookupError("PSA API のトークンが無効か期限切れです（PSA_API_TOKEN を更新してください）")
+    if r.status_code == 429:
+        raise PSALookupError("PSA API の1日の上限に達しました（明日また使えます）")
+    if r.status_code == 404:
+        raise PSALookupError("PSA にこの cert番号が見つかりません")
     r.raise_for_status()
-    c = (r.json() or {}).get("PSACert") or {}
+    js = r.json() or {}
+    c = _ci(js, "PSACert") or {}
     if not c:
-        return None
+        msg = _ci(js, "ServerMessage") or "cert番号が見つかりません"
+        raise PSALookupError(f"PSA：{msg}")
     return {
-        "card_name_en": c.get("Subject"), "set_name": c.get("Brand"), "card_number": c.get("CardNumber"),
-        "grade": _grade_number(c.get("CardGrade") or c.get("GradeDescription")),
-        "psa_population": _int(c.get("TotalPopulation")), "year": c.get("Year"), "grader": "PSA",
+        "card_name_en": _title_case(_ci(c, "Subject")), "psa_brand": _ci(c, "Brand"),
+        "card_number": _ci(c, "CardNumber"), "psa_variety": _ci(c, "Variety"),
+        "grade": _grade_number(_ci(c, "CardGrade", "GradeDescription")),
+        "psa_population": _int(_ci(c, "TotalPopulation")), "year": _ci(c, "Year"), "grader": "PSA",
     }
+
+
+def _title_case(v):
+    """PSA は "IRON JUGULIS" のように大文字なので、読みやすく直す（ex / V / VMAX などは残す）。"""
+    if not v or not isinstance(v, str) or not v.isupper():
+        return v
+    keep = {"EX": "ex", "GX": "GX", "V": "V", "VMAX": "VMAX", "VSTAR": "VSTAR", "LV.X": "LV.X", "BREAK": "BREAK"}
+    return " ".join(keep.get(w, w.capitalize()) for w in v.split())
+
+
+def match_psa_to_catalog(db: Session, brand: str | None, card_number: str | None) -> CardCatalog | None:
+    """PSA の Brand（例 "POKEMON JAPANESE SV4M-FUTURE FLASH"）に含まれるセットIDと型番から、カード一覧のカードを特定する。"""
+    if not brand or not card_number:
+        return None
+    up = brand.upper()
+    n = normalize_card_number(str(card_number))
+    sets = [sid for (sid,) in db.execute(select(CardCatalog.set_id).distinct()) if sid]
+    hits = [sid for sid in sets if re.search(rf"(?<![A-Z0-9]){re.escape(sid.upper())}(?![A-Z0-9])", up)]
+    for sid in sorted(hits, key=len, reverse=True):  # 長いセットID（SV4M など）を優先
+        card = db.scalar(select(CardCatalog).where(
+            CardCatalog.set_id == sid, func.upper(func.ltrim(CardCatalog.card_number, "0")) == n))
+        if card:
+            return card
+    return None
 
 
 def _int(v) -> int | None:
@@ -110,6 +158,11 @@ def parse_psa_cert_html(page: str) -> dict[str, Any]:
 def _psa_scrape(cert: str) -> dict[str, Any] | None:
     r = httpx.get(f"https://www.psacard.com/cert/{cert}/psa", timeout=8, follow_redirects=True,
                   headers={"User-Agent": "Mozilla/5.0 (compatible; ebay-ops-tool)"})
+    if r.status_code in (403, 429, 503):
+        # PSA のサイトは Cloudflare の Bot 対策で自動取得を受け付けない（2026-11 確認）
+        if get_config().psa_api_token:
+            return None
+        raise PSALookupError("PSA のサイトからは自動取得できません。PSA API のトークン（PSA_API_TOKEN）を設定すると自動で入ります")
     if r.status_code != 200:
         return None
     data = parse_psa_cert_html(r.text)
@@ -182,22 +235,38 @@ def lookup(db: Session, cert: str, *, allow_network: bool = True) -> dict[str, A
         return result
 
     if allow_network:
+        from app.services import health
         for name, fn in (("psa_api", _psa_api), ("psa_page", _psa_scrape)):
             try:
                 data = fn(cert)
+                if name == "psa_api" and get_config().psa_api_token:
+                    health.record(db, "psa-api", ok=True)
+            except PSALookupError as e:
+                result["errors"].append(str(e))
+                if "トークン" in str(e):
+                    health.record(db, "psa-api", ok=False, error=str(e))
+                continue
             except Exception as e:  # noqa: BLE001 - 失敗は手入力にフォールバック
                 log.info("PSA lookup %s failed for %s: %s", name, cert, e)
-                result["errors"].append(f"{name}: {e.__class__.__name__}")
+                if name == "psa_api":
+                    health.record(db, "psa-api", ok=False, error=str(e))
+                    result["errors"].append(f"PSA API に接続できません（{e.__class__.__name__}）")
                 continue
             if data:
+                brand, variety = data.pop("psa_brand", None), data.pop("psa_variety", None)
                 fields = {k: v for k, v in data.items() if v is not None}
-                result.update(source="psa", fields=fields)
-                # 型番とカード名でモデルID候補を探す
-                num = fields.get("card_number")
-                if num:
-                    result["candidates"] = [c for c in candidates(db, num)
-                                            if c.card_number.lstrip("0") == str(num).lstrip("0")][:10]
-                if len(result["candidates"]) == 1:
-                    fields.update({k: v for k, v in _from_card_catalog(db, result["candidates"][0].model_id).items() if v})
+                result.update(source="psa", fields=fields, psa={"brand": brand, "variety": variety})
+                card = match_psa_to_catalog(db, brand, fields.get("card_number"))
+                if card:
+                    # カード一覧で特定できた：モデルID・日本語名・英語名・セットを埋める
+                    fields.update({k: v for k, v in _from_card_catalog(db, card.model_id).items() if v})
+                    result["matched"] = card.model_id
+                else:
+                    if brand:
+                        fields.setdefault("set_name", brand)
+                    num = fields.get("card_number")
+                    if num:
+                        result["candidates"] = search_by_number(db, str(num))[:10]
                 return result
+    return result
     return result
