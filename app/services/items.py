@@ -113,6 +113,8 @@ def register_item(db: Session, user: User, data: dict[str, Any]) -> Item:
             raise err
         quantity = 1
         d["grader"] = d.get("grader") or "PSA"
+        if not d.get("grade"):
+            raise ServiceError("グレードを選んでください")
         d["condition"] = None
     else:
         d["grader"] = None

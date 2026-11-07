@@ -225,6 +225,8 @@ def test_psa_api_lookup_fills_grade_pop_and_model(db, env, monkeypatch):
     monkeypatch.setattr(get_config(), "psa_api_token", "tok")
 
     class R:
+        text = ""
+
         def __init__(self, code, js=None):
             self.status_code, self._js = code, js
 
@@ -254,8 +256,20 @@ def test_psa_api_lookup_fills_grade_pop_and_model(db, env, monkeypatch):
     db.commit()
     assert db.get(ApiHealth, "psa-api").consecutive_failures >= 1
 
-    # トークンが無く、PSA のサイトが Bot 対策で 403 のとき
-    monkeypatch.setattr(get_config(), "psa_api_token", "")
-    monkeypatch.setattr(httpx, "get", lambda url, **k: R(403))
+    # 承認されていないアカウント（403 approved customers）は通知を鳴らさず理由だけ返す
+    class R403(R):
+        text = '{"Message":"Access to this API is limited to approved customers."}'
+    before = db.get(ApiHealth, "psa-api").consecutive_failures
+    monkeypatch.setattr(httpx, "get", lambda url, **k: R403(403))
     res = cardinfo.lookup(db, "12345678")
-    assert any("PSA_API_TOKEN" in e for e in res["errors"])
+    assert any("承認" in e for e in res["errors"])
+    db.commit()
+    assert db.get(ApiHealth, "psa-api").consecutive_failures == before
+
+    # トークンが無ければ PSA には問い合わせない（サイトは Bot 対策で取得できないため）
+    monkeypatch.setattr(get_config(), "psa_api_token", "")
+    def boom(*a, **k):
+        raise AssertionError("network must not be used")
+    monkeypatch.setattr(httpx, "get", boom)
+    res = cardinfo.lookup(db, "12345678")
+    assert res["source"] == "manual" and res["errors"] == []

@@ -111,3 +111,6 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
 .cand-list button.cand-img { display: flex; align-items: center; gap: 10px; padding: 6px 10px; }
 .cand-list button.cand-img img { width: 52px; height: 72px; object-fit: contain; flex: 0 0 auto; border-radius: 4px; background: var(--bg); }
 .cand-list button.cand-img span { white-space: pre-line; line-height: 1.35; }
+.grade-btns { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.grade-btns button { padding: 12px 0; font-size: 18px; font-weight: 700; }
+.grade-btns button.selected { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }

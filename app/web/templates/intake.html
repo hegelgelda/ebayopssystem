@@ -10,24 +10,31 @@
   {% for c in Category.ALL %}<button type="button" class="tab" data-cat="{{ c }}">{{ Category.LABELS[c] }}</button>{% endfor %}
 </div>
 
-{# ---- PSA：cert 番号の読み取り ---- #}
+{# ---- PSA：cert 番号 → ① 型番でカードを選ぶ → ② グレード ---- #}
 <div class="card" data-cats="psa">
   <video id="scanner" playsinline muted hidden></video>
   <div class="actions"><button type="button" class="primary big" id="scan-btn">📷 cert番号を読み取る</button></div>
   <div class="row" style="margin-top:8px">
     <div><label>cert番号（読めなければ手入力）</label><input type="text" id="cert-manual" inputmode="numeric" value="{{ cert }}"></div>
-    <div style="flex:0 0 auto"><button type="button" id="lookup-btn">カード情報を取得</button></div>
+    <div style="flex:0 0 auto"><button type="button" id="lookup-btn">確定</button></div>
+    <div style="flex:0 0 auto"><a class="btn" id="psa-link" target="_blank" rel="noopener" hidden>PSAで確認 ↗</a></div>
   </div>
   <div id="lookup-status" class="small muted" style="margin-top:6px"></div>
-  <details id="psa-num-box" style="margin-top:8px"><summary>型番でカードを探す（モデルIDが自動で入らないとき）</summary>
-    <div class="row" style="margin-top:6px">
-      <div><label>型番</label><input type="search" id="psa-num-q" placeholder="201 / 201/165"></div>
-      <div><label>セットで絞り込み（任意）</label><input type="search" id="psa-num-set" placeholder="SV2a / 151 / ポケモンカード151"></div>
-      <div style="flex:0 0 auto"><button type="button" class="primary" id="psa-num-btn">型番で検索</button></div>
-    </div>
-    <div id="psa-num-status" class="small muted" style="margin-top:6px"></div>
-    <div class="cand-list" id="psa-num-cands"></div>
-  </details>
+
+  <h3 style="margin:14px 0 4px">① カードを選ぶ（型番で検索）</h3>
+  <div class="row">
+    <div><label>型番（ラベルの「#」の後ろの番号）</label><input type="search" id="psa-num-q" inputmode="text" placeholder="201 / 078"></div>
+    <div><label>セットで絞り込み（任意）</label><input type="search" id="psa-num-set" placeholder="SV4M / 151 / ポケモンカード151"></div>
+    <div style="flex:0 0 auto"><button type="button" class="primary" id="psa-num-btn">型番で検索</button></div>
+  </div>
+  <div id="psa-num-status" class="small muted" style="margin-top:6px"></div>
+  <div class="cand-list" id="psa-num-cands"></div>
+
+  <h3 style="margin:14px 0 4px">② グレード</h3>
+  <div class="grade-btns" id="grade-btns">
+    {% for g in ['10', '9', '8.5', '8', '7.5', '7', '6', '5', '4', '3', '2', '1'] %}<button type="button" data-grade="{{ g }}">{{ g }}</button>{% endfor %}
+  </div>
+  <p class="small muted" style="margin:4px 0 0">Population は任意です。必要なら「PSAで確認」で cert のページを開いて下の欄に入れてください。</p>
 </div>
 
 {# ---- シングル：型番から検索 ---- #}
@@ -58,7 +65,7 @@
   <div class="row" data-cats="psa">
     <div><label>cert番号 *</label><input type="text" name="cert_number" id="f-cert_number" inputmode="numeric" value="{{ f.get('cert_number', cert) }}"></div>
     <div><label>グレーダー</label><input type="text" name="grader" id="f-grader" value="{{ f.get('grader', 'PSA') }}"></div>
-    <div><label>グレード</label><input type="text" name="grade" id="f-grade" value="{{ f.get('grade', '') }}"></div>
+    <div><label>グレード *</label><input type="text" name="grade" id="f-grade" value="{{ f.get('grade', '') }}" inputmode="decimal"></div>
     <div><label>Population</label><input type="number" name="psa_population" id="f-psa_population" value="{{ f.get('psa_population', '') }}"></div>
   </div>
 
@@ -166,32 +173,52 @@
 
   // ---- PSA ----
   const status = $('lookup-status');
+  function setPsaLink(cert) {
+    const a = $('psa-link');
+    a.hidden = !cert;
+    if (cert) a.href = `https://www.psacard.com/cert/${encodeURIComponent(cert)}/psa`;
+  }
+  function markGrade() {
+    const g = $('f-grade').value;
+    document.querySelectorAll('#grade-btns button').forEach(b => b.classList.toggle('selected', b.dataset.grade === g));
+  }
+  document.querySelectorAll('#grade-btns button').forEach(b => b.onclick = () => {
+    $('f-grade').value = b.dataset.grade; markGrade();
+    document.querySelector('input[name=purchase_price_jpy]').focus();
+  });
+  $('f-grade').addEventListener('input', markGrade);
+
   async function lookup(raw) {
-    status.textContent = '取得中…';
+    status.textContent = '確認中…';
     const r = await fetch('/api/lookup?cert=' + encodeURIComponent(raw), {headers: {'Accept': 'application/json'}});
     const js = await r.json();
     if (!r.ok) { status.textContent = js.error || '取得できませんでした'; return; }
-    $('f-cert_number').value = js.cert; $('cert-manual').value = js.cert;
+    $('f-cert_number').value = js.cert; $('cert-manual').value = js.cert; setPsaLink(js.cert);
     if (js.existing) { status.innerHTML = `⚠️ cert ${js.cert} は登録済みです（${js.existing.status}）：<a href="${js.existing.url}">既存レコードを開く</a>`; return; }
     FIELDS.forEach(k => { if (k !== 'grader') $('f-' + k).value = ''; });
     fill(js.fields || {});
     $('f-info_source').value = js.source;
-    const label = {courtyard: '自社Courtyardカタログ', psa: 'PSA', manual: '自動取得できませんでした（手入力）'}[js.source];
-    let msg = `情報源：${label}`;
-    if (js.matched) msg += `。カード一覧で ${js.matched} を特定しました`;
-    if (js.psa && js.psa.variety) msg += `（PSA の表記：${js.psa.variety}）`;
-    if (js.source !== 'manual') msg += '。内容を確認してください';
-    if (js.errors && js.errors.length && js.source === 'manual') msg += '\n' + js.errors.join('\n');
+    markGrade();
+    let msg;
+    if (js.source === 'courtyard') msg = '自社Courtyardカタログからカード情報を入れました。内容を確認し、グレードを選んでください';
+    else if (js.source === 'psa') msg = 'PSA からカード情報を入れました。内容を確認してください';
+    else msg = `cert ${js.cert}：① 型番でカードを選び、② グレードを選んでください`;
+    if (js.matched) msg += `（${js.matched}）`;
+    if (js.errors && js.errors.length) msg += '\n' + js.errors.join('\n');
     status.textContent = msg;
     status.style.whiteSpace = 'pre-line';
-    // モデルIDが取れなかったら、型番で候補を出す（PSA の検証ページで型番だけ取れた場合など）
     if (!$('f-model_id').value) {
-      $('psa-num-box').open = true;
-      if (js.fields && js.fields.card_number) { $('psa-num-q').value = js.fields.card_number; searchNumber('psa-num', () => {
-        if ($('f-info_source').value === 'manual') $('f-info_source').value = 'catalog';
-        document.querySelector('input[name=purchase_price_jpy]').focus(); }); }
+      if (js.fields && js.fields.card_number) { $('psa-num-q').value = js.fields.card_number; searchNumber('psa-num', afterPsaPick); }
       else { $('psa-num-q').focus(); }
+    } else if (!$('f-grade').value) {
+      $('grade-btns').scrollIntoView({block: 'center'});
     }
+  }
+  // ① でカードを選んだら ② グレードへ（決まっていれば仕入値へ）
+  function afterPsaPick() {
+    if ($('f-info_source').value === 'manual') $('f-info_source').value = 'catalog';
+    if ($('f-grade').value) document.querySelector('input[name=purchase_price_jpy]').focus();
+    else $('grade-btns').scrollIntoView({block: 'center'});
   }
   $('lookup-btn').onclick = () => lookup($('cert-manual').value);
   $('scan-btn').onclick = () => {
@@ -219,10 +246,8 @@
     [$(p + '-q'), $(p + '-set')].forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchNumber(p, onPick); } }));
   }
   wireSearch('num', () => { $('f-info_source').value = 'catalog'; $('f-condition').focus(); });
-  wireSearch('psa-num', () => {
-    if ($('f-info_source').value === 'manual') $('f-info_source').value = 'catalog';
-    document.querySelector('input[name=purchase_price_jpy]').focus();
-  });
+  wireSearch('psa-num', afterPsaPick);
+  $('cert-manual').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lookup($('cert-manual').value); } });
 
   // ---- パック・BOX：セット検索 ----
   async function searchSets() {

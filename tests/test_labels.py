@@ -71,3 +71,13 @@ def test_scanner_assets_are_served(app, admin_client):
     assert admin_client.get("/static/vendor/barcode-detector-3.2.3-ponyfill.js").status_code == 200
     js = admin_client.get("/static/scan.js").text
     assert "/static/vendor/zxing_reader-3.1.6.wasm" in js and "zxing-library" not in js
+
+
+def test_psa_intake_grade_buttons_and_required_grade(admin_client, users):
+    page = admin_client.get("/intake").text
+    assert 'id="grade-btns"' in page and 'data-grade="10"' in page and 'data-grade="9.5"' not in page
+    assert 'id="psa-link"' in page and "psacard.com/cert/" in page
+    # グレードが無い PSA は登録できない
+    r = register(admin_client, cert="61616161", grade="")
+    assert r.status_code == 400 and "グレードを選んでください" in r.text
+    assert register(admin_client, cert="61616161").status_code == 303

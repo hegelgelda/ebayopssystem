@@ -69,6 +69,9 @@ def _psa_api(cert: str) -> dict[str, Any] | None:
         return None
     r = httpx.get(f"https://api.psacard.com/publicapi/cert/GetByCertNumber/{cert}",
                   headers={"Authorization": f"bearer {token}"}, timeout=10)
+    if r.status_code == 403 and "approved" in r.text.lower():
+        # 2026-11 時点で PSA Public API は承認制（"Access to this API is limited to approved customers."）
+        raise PSALookupError("PSA API は承認された利用者のみ使えます（PSA_API_TOKEN を削除すると、この確認をしなくなります）")
     if r.status_code in (401, 403):
         raise PSALookupError("PSA API のトークンが無効か期限切れです（PSA_API_TOKEN を更新してください）")
     if r.status_code == 429:
@@ -236,14 +239,16 @@ def lookup(db: Session, cert: str, *, allow_network: bool = True) -> dict[str, A
 
     if allow_network:
         from app.services import health
-        for name, fn in (("psa_api", _psa_api), ("psa_page", _psa_scrape)):
+        # PSA のサイト（cert ページ）は Cloudflare の Bot 対策で自動取得できないため問い合わせない。
+        # PSA Public API はトークンがあるときだけ使う（承認制）。無ければ型番検索とグレードの手入力で登録する。
+        for name, fn in (("psa_api", _psa_api),):
             try:
                 data = fn(cert)
                 if name == "psa_api" and get_config().psa_api_token:
                     health.record(db, "psa-api", ok=True)
             except PSALookupError as e:
                 result["errors"].append(str(e))
-                if "トークン" in str(e):
+                if "期限切れ" in str(e):
                     health.record(db, "psa-api", ok=False, error=str(e))
                 continue
             except Exception as e:  # noqa: BLE001 - 失敗は手入力にフォールバック
