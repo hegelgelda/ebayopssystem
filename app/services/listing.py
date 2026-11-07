@@ -19,12 +19,31 @@ TEMPLATE_PARTS = ("title", "description", "item_specifics")
 PART_LABELS = {"title": "タイトル（80文字以内に切り詰め）", "description": "説明文（HTML）",
                "item_specifics": "Item Specifics（JSON）"}
 
+# 配送・返品・支払の文面は「Torelis eBay Business Policies v1.1」の Buyer-facing text に合わせる。
+# 返品の最後の一文（eBay Money Back Guarantee）と、48時間ルールを「お願い」にとどめる書き方は変えないこと。
 _SHIPPING_RETURNS = """<h3>Shipping</h3>
-<p>Free shipping via FedEx / DHL Express with tracking. Import duties and taxes are prepaid by the seller (DDP).
-Ships within 2 business days after payment.</p>
+<ul>
+  <li>All items ship from Japan within 2 business days of cleared payment.</li>
+  <li>We ship exclusively via FedEx or DHL Express. <b>A tracking number is provided for every order</b> and uploaded to eBay as soon as your item ships, so you can follow your package all the way to your door. Typical delivery is 3&ndash;7 business days after dispatch.</li>
+  <li>Shipping is FREE to all supported destinations.</li>
+  <li><b>Import duties and taxes are included (DDP).</b> You will not be charged anything on delivery.</li>
+  <li>We do not ship to PO Boxes or APO/FPO addresses. Please provide a physical address and a valid phone number for the courier.</li>
+  <li>Each item is packed individually and securely. Combined shipping discounts are not available.</li>
+  <li>Delivery times are estimates and may vary due to customs clearance or carrier delays.</li>
+</ul>
 <h3>Returns</h3>
-<p>Returns are not accepted. This does not affect eBay Money Back Guarantee.
-If the item arrives damaged, please contact us within 48 hours of delivery.</p>
+<ul>
+  <li>We do not accept returns for change of mind, including buyer's remorse or ordering mistakes.</li>
+  {% if category in ('pack', 'box') %}<li><b>Sealed products:</b> Once the factory seal or shrink wrap is opened, we cannot guarantee contents, pull rates, or card condition, and opened items cannot be returned.</li>{% endif %}
+  <li><b>Please inspect your item upon arrival and contact us within 48 hours of delivery</b> if there is any problem, such as damage in transit or an item that differs from the listing. Please include clear photos of the item, outer box, and packaging. Prompt reporting allows us to file a claim with the carrier in time and resolve the issue quickly.</li>
+  <li>This does not affect your rights under the eBay Money Back Guarantee.</li>
+</ul>
+<h3>Payment</h3>
+<ul>
+  <li>Immediate payment is required for Buy It Now purchases.</li>
+  <li>All payments are processed securely through eBay.</li>
+  <li>Orders ship within 2 business days after payment is confirmed, and your tracking number will be uploaded to eBay at dispatch.</li>
+</ul>
 </div>"""
 
 

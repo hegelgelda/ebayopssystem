@@ -252,3 +252,40 @@ def test_tcg_catalog_import(db, env, admin_client, monkeypatch):
     js = admin_client.get("/api/catalog/search?number=201&set=ポケモンカード").json()
     assert [c["model_id"] for c in js["candidates"]] == ["SV2a-201"] and js["candidates"][0]["image_url"]
     assert "3</b>枚" in admin_client.get("/settings").text
+
+
+def test_description_follows_business_policy(admin_client, db, users):
+    from app.models import Item
+    from app.services import listing as listing_svc
+    for cat, sealed in (("psa", False), ("single", False), ("box", True)):
+        it = Item(category=cat, cert_number="5" * 8 if cat == "psa" else None, sku=f"T-{cat}", model_id="SV2a-201",
+                  card_name_en="X", condition="nm" if cat == "single" else None)
+        db.add(it)
+        db.flush()
+        _title, desc, _specs, _v = listing_svc.render(db, it)
+        assert "Import duties and taxes are included (DDP)" in desc
+        assert "eBay Money Back Guarantee" in desc and "within 48 hours of delivery" in desc
+        assert "Immediate payment is required for Buy It Now purchases." in desc
+        assert ("Sealed products" in desc) is sealed
+
+
+def test_migration_refreshes_only_unedited_templates(env):
+    import sqlite3
+    from alembic import command
+    from alembic.config import Config
+    from app.config import get_config
+    from app.db import reset_engine
+    db_path = get_config().db_path
+    reset_engine()
+    ac = Config("alembic.ini")
+    command.downgrade(ac, "0004")
+    con = sqlite3.connect(db_path)
+    con.execute("INSERT INTO templates (key, body, version, updated_at) VALUES ('psa.description', 'OLD', 1, '2026-01-01')")
+    con.execute("INSERT INTO templates (key, body, version, updated_at) VALUES ('box.description', 'MINE', 3, '2026-01-01')")
+    con.commit()
+    con.close()
+    command.upgrade(ac, "head")
+    con = sqlite3.connect(db_path)
+    rows = dict(con.execute("SELECT key, body FROM templates").fetchall())
+    assert "Business" not in rows["psa.description"] and "DDP" in rows["psa.description"]
+    assert rows["box.description"] == "MINE"

@@ -70,7 +70,7 @@ DEFAULTS: dict[str, Any] = {
         "category_id": "183454",
         "condition_id": "2750",
         "duration_days": 7,
-        "shipping_profile": "Free Express DDP",
+        "shipping_profile": "Torelis Free Express (DDP)",
         "payment_profile": "Immediate Payment",
         "return_profile": "No Returns",
         "location": "Tokyo, Japan",
