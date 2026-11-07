@@ -320,3 +320,32 @@ def test_sealed_csv_matches_ebay_templates(admin_client, db, env, users):
     assert "Sealed products" in b["*Description"]
     unknown = [h for h in header if h not in ebay_template_columns() and not h.startswith("*Action(")]
     assert unknown == [], unknown
+
+
+def test_regenerate_draft_after_csv_export(admin_client, db, env, users):
+    """出品準備完了（CSV出力済み）の在庫でも「テンプレートから再生成」と出品形式の変更ができる。"""
+    from app.models import Item, ListingDraft
+    item_id = done_id(intake(admin_client, category="single", model_id="SV4M-78", condition="nm",
+                             card_name_en="Iron Jugulis"))
+    d1 = ready_item(admin_client, item_id, start="36")
+    r = admin_client.post("/listings/export", data={"draft_id": str(d1)})
+    assert r.status_code == 303
+
+    r = admin_client.post("/listings/generate", data={"item_id": str(item_id)})
+    assert r.status_code == 303 and r.headers["location"].startswith("/drafts/"), r.headers
+    d2 = int(r.headers["location"].rsplit("/", 1)[1])
+    db.expire_all()
+    assert db.get(Item, item_id).status == "PRICED"
+    assert db.get(ListingDraft, d1).status == "superseded"  # 古い（CSV出力済み）下書きは一覧から外れる
+    assert admin_client.post(f"/drafts/{d2}/confirm").status_code == 303
+    page = admin_client.get("/listings?lane=fixed").text
+    assert f'value="{d2}"' in page and f'value="{d1}"' not in page
+
+    # 出品準備完了の在庫を別のレーンに移せる
+    db.expire_all()
+    v = db.get(Item, item_id).version
+    r = admin_client.post(f"/items/{item_id}/format", data={"listing_format": "auction", "version": str(v)})
+    assert r.status_code == 303
+    db.expire_all()
+    it = db.get(Item, item_id)
+    assert it.status == "PRICED" and it.listing_format == "auction"

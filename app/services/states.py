@@ -12,7 +12,7 @@ ITEM_TRANSITIONS: dict[str, set[str]] = {
     IS.INTAKE: {IS.PHOTOGRAPHED},
     IS.PHOTOGRAPHED: {IS.PRICED},
     IS.PRICED: {IS.READY},
-    IS.READY: {IS.LISTED},
+    IS.READY: {IS.LISTED, IS.PRICED},  # 下書きの再生成・出品形式の変更で価格確定に戻す
     IS.LISTED: {IS.PRICED, IS.SOLD},  # 不落札 → PRICED / 落札 → SOLD
     IS.SOLD: {IS.PRICED},  # 未払いキャンセルで在庫に戻る
     IS.WITHDRAWN: set(),

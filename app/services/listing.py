@@ -241,7 +241,7 @@ def generate_draft(db: Session, user: User, item: Item) -> ListingDraft:
     title, desc, specs, tv = render(db, item, qty)
     defaults = get_setting(db, "listing_defaults")
     for old in db.scalars(select(ListingDraft).where(ListingDraft.item_id == item.id,
-                                                     ListingDraft.status.in_(["draft", "ready", "failed"]))):
+                                                     ListingDraft.status.in_(["draft", "ready", "exported", "failed"]))):
         old.status = "superseded"
     d = ListingDraft(item_id=item.id, price_quote_id=q.id, title=title, description_html=desc,
                      item_specifics_json=specs, format=item.listing_format, quantity=qty,
