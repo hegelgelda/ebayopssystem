@@ -19,6 +19,8 @@ TEMPLATE_PARTS = ("title", "description", "item_specifics")
 PART_LABELS = {"title": "タイトル（80文字以内に切り詰め）", "description": "説明文（HTML）",
                "item_specifics": "Item Specifics（JSON）"}
 
+# Item Specifics：グレーダー・グレード・cert番号・未鑑定の状態は CSV の Condition Descriptor（CD: 列）で渡すので、
+# ここ（C: 列）には入れない（eBay のテンプレートで、同名の項目は CD: 側を優先するよう指示されている）。
 # 配送・返品・支払の文面は「Torelis eBay Business Policies v1.1」の Buyer-facing text に合わせる。
 # 返品の最後の一文（eBay Money Back Guarantee）と、48時間ルールを「お願い」にとどめる書き方は変えないこと。
 _SHIPPING_RETURNS = """<h3>Shipping</h3>
@@ -67,8 +69,7 @@ DEFAULT_TEMPLATES: dict[str, dict[str, str]] = {
 """ + _SHIPPING_RETURNS,
         "item_specifics": _specs({
             "Game": "Pokémon TCG", "Card Name": "{{ card_name_en }}", "Set": "{{ set_name or set_id }}",
-            "Card Number": "{{ card_number }}", "Language": "Japanese", "Graded": "Yes", "Grade": "{{ grade }}",
-            "Professional Grader": "{{ grader_full }}", "Certification Number": "{{ cert_number }}",
+            "Card Number": "{{ card_number }}", "Language": "Japanese", "Year Manufactured": "{{ year }}",
             "Manufacturer": "The Pokémon Company"}),
     },
     Category.SINGLE: {
@@ -87,7 +88,7 @@ Shipped in a sleeve and top loader.</p>
 """ + _SHIPPING_RETURNS,
         "item_specifics": _specs({
             "Game": "Pokémon TCG", "Card Name": "{{ card_name_en }}", "Set": "{{ set_name or set_id }}",
-            "Card Number": "{{ card_number }}", "Language": "Japanese", "Graded": "No",
+            "Card Number": "{{ card_number }}", "Language": "Japanese",
             "Manufacturer": "The Pokémon Company"}),
     },
     Category.PACK: {
@@ -128,7 +129,7 @@ Shipped in a sleeve and top loader.</p>
 <p>You will receive the exact lot shown in the photos.</p>
 """ + _SHIPPING_RETURNS,
         "item_specifics": _specs({
-            "Game": "Pokémon TCG", "Language": "Japanese", "Graded": "No",
+            "Game": "Pokémon TCG", "Language": "Japanese",
             "Manufacturer": "The Pokémon Company"}),
     },
 }

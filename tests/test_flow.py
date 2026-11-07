@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+from pathlib import Path
 import io
 from datetime import timedelta
 
@@ -111,13 +112,22 @@ def test_full_flow(admin_client, staff_client, users, env):
     batch = r.headers["location"].split("batch=")[1]
     csv_text = staff_client.get(f"/exports/{batch}.csv").content.decode("utf-8-sig")
     rows = list(csv.reader(io.StringIO(csv_text)))
+    rows = rows[1:]  # 先頭は Info 行
     header, row = rows[0], rows[1]
     rec = dict(zip(header, row))
     assert rec["CustomLabel"] == "12345678"
     assert len(rec["*Title"]) <= 80 and "Charizard ex" in rec["*Title"]
     assert rec["*StartPrice"] == "260.00" and rec["BuyItNowPrice"] == "420.00"
     assert rec["PicURL"].count("https://ops.example.com/img/") == 2
-    assert rec["C:Certification Number"] == "12345678"
+    assert rec["CDA:Certification Number - (ID: 27503)"] == "12345678"
+    assert rec["CD:Professional Grader - (ID: 27501)"] == "275010" and rec["CD:Grade - (ID: 27502)"] == "275020"
+    assert rec["*C:Game"] == "Pokémon TCG" and "C:Certification Number" not in rec
+    # eBay のカテゴリテンプレート（183454）に無い列を出していないこと
+    tpl = set((Path(__file__).parent / "fixtures" / "ebay_template_183454_header.txt").read_text(encoding="utf-8").split("\n"))
+    unknown = [h for h in header if h not in tpl and not h.startswith("*Action(")]
+    assert unknown == [], unknown
+    assert header[0] == "*Action(SiteID=US|Country=JP|Currency=USD|Version=1193|CC=UTF-8)"
+    assert csv_text.startswith("Info,Version=1.0.0,Template=fx_category_template_EBAY_US")
     assert rec["*Format"] == "Auction" and rec["*Duration"] == "7"
 
     # 結果CSVを取り込む → LISTED

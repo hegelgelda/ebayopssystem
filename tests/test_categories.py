@@ -84,14 +84,17 @@ def test_single_fixed_multi_quantity_flow(admin_client, db, env, users):
     r = admin_client.post("/listings/export", data={"draft_id": str(draft_id)})
     assert "lane=fixed" in r.headers["location"]
     batch = r.headers["location"].split("batch=")[1]
-    rows = list(csv.reader(io.StringIO(admin_client.get(f"/exports/{batch}.csv").content.decode("utf-8-sig"))))
+    rows = list(csv.reader(io.StringIO(admin_client.get(f"/exports/{batch}.csv").content.decode("utf-8-sig"))))[1:]
     rec = dict(zip(rows[0], rows[1]))
     assert rec["CustomLabel"] == f"S-{item_id:05d}"
     assert rec["*Format"] == "FixedPrice" and rec["*Duration"] == "GTC" and rec["*Quantity"] == "3"
     assert rec["*StartPrice"] == "25.00" and rec["BuyItNowPrice"] == ""
     assert rec["*ConditionID"] == "4000" and rec["CD:Card Condition - (ID: 40001)"] == "400010"
     assert rec["CD:Professional Grader - (ID: 27501)"] == "" and rec["CDA:Certification Number - (ID: 27503)"] == ""
-    assert rec["C:Graded"] == "No" and "NM" in rec["*Title"]
+    assert "C:Graded" not in rec and "NM" in rec["*Title"]
+    # 状態 LP は 400015（eBay テンプレートの値）
+    from app.settings_store import get_setting
+    assert {c["key"]: c["ebay_id"] for c in get_setting(db, "raw_conditions")}["ex"] == "400015"
 
     result = f"Status,Item ID,Custom Label\nSuccess,123456789012,S-{item_id:05d}\n"
     admin_client.post("/listings/import", files={"file": ("r.csv", result.encode(), "text/csv")})

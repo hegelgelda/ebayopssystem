@@ -56,8 +56,9 @@ class ManualListingAdapter(ListingAdapter):
         cells: list[tuple[str, object]] = []  # (kind, conf)
         for col in conf["columns"]:
             if col.get("expand") == "item_specifics":
+                required = col.get("required", {})  # 例 {"Game": "*C:Game"}（テンプレートで必須の項目は * 付きの列名）
                 for k in spec_keys:
-                    headers.append(col.get("header_format", "C:{key}").format(key=k))
+                    headers.append(required.get(k) or col.get("header_format", "C:{key}").format(key=k))
                     cells.append(("spec", k))
             else:
                 headers.append(col["header"])

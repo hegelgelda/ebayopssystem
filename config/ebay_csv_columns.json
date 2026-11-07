@@ -1,7 +1,13 @@
 {
-  "_comment": "eBay Seller Hub 一括出品（ファイルアップロード／File Exchange形式）の列定義。Seller Hubから最新のテンプレート（トレーディングカードカテゴリ）をダウンロードして列名を確認し、ここを合わせて変更する。value は Jinja2 式（使える変数：draft, item, specs, images, defaults, grader_id, grade_id（PSAのみ）, card_condition_id（シングルのみ）, category_id, condition_id（区分ごと。設定の ebay_categories））。",
+  "_comment": "eBay Seller Hub 一括出品（Reports → Uploads → カテゴリテンプレート）の列定義。2026-11-07 に ebay.com の CCG Individual Cards（183454）のテンプレートと照合済み。value は Jinja2 式（使える変数：draft, item, specs, images, defaults, grader_id, grade_id（PSAのみ）, card_condition_id（シングルのみ）, category_id, condition_id）。Action 行の Country は商品の所在国。ビジネスポリシーを使うので DispatchTimeMax / ReturnsAcceptedOption は出力しない。",
   "encoding": "utf-8-sig",
-  "info_rows": [],
+  "info_rows": [
+    [
+      "Info",
+      "Version=1.0.0",
+      "Template=fx_category_template_EBAY_US"
+    ]
+  ],
   "columns": [
     {
       "header": "*Action(SiteID=US|Country=JP|Currency=USD|Version=1193|CC=UTF-8)",
@@ -41,7 +47,10 @@
     },
     {
       "expand": "item_specifics",
-      "header_format": "C:{key}"
+      "header_format": "C:{key}",
+      "required": {
+        "Game": "*C:Game"
+      }
     },
     {
       "header": "PicURL",
@@ -86,14 +95,6 @@
     {
       "header": "*Location",
       "value": "{{ defaults.location }}"
-    },
-    {
-      "header": "Country",
-      "value": "{{ defaults.country }}"
-    },
-    {
-      "header": "PostalCode",
-      "value": "{{ defaults.postal_code }}"
     }
   ],
   "grader_ids": {
@@ -101,9 +102,12 @@
     "BCCG": "275011",
     "BVG": "275012",
     "BGS": "275013",
-    "CSG": "275014",
     "CGC": "275015",
-    "SGC": "275016"
+    "SGC": "275016",
+    "KSA": "275017",
+    "GMA": "275018",
+    "HGA": "275019",
+    "TAG": "2750115"
   },
   "grade_ids": {
     "10": "275020",
@@ -124,7 +128,9 @@
     "2.5": "2750215",
     "2": "2750216",
     "1.5": "2750217",
-    "1": "2750218"
+    "1": "2750218",
+    "Authentic": "2750219",
+    "Authentic Altered": "2750220"
   },
   "result_columns": {
     "_comment": "Seller Hub のアップロード結果CSVの列名候補（大文字小文字・空白は無視して照合）",

@@ -94,7 +94,7 @@ def main():
     r = s.post("/listings/export", data={"draft_id": str(draft_id)})
     batch = r.headers["location"].split("batch=")[1]
     text = s.get(f"/exports/{batch}.csv").content.decode("utf-8-sig")
-    rec = dict(zip(*list(csv.reader(io.StringIO(text)))[:2]))
+    rec = dict(zip(*list(csv.reader(io.StringIO(text)))[1:3]))  # 先頭は Info 行
     assert rec["CustomLabel"] == cert and rec["PicURL"].count("/img/") == 2
     step(f"出品データ → READY → CSV出力（{batch}、タイトル「{rec['*Title']}」）")
 

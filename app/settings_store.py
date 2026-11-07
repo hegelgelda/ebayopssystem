@@ -73,7 +73,7 @@ DEFAULTS: dict[str, Any] = {
         "shipping_profile": "Torelis Free Express (DDP)",
         "payment_profile": "Immediate Payment",
         "return_profile": "No Returns",
-        "location": "Tokyo, Japan",
+        "location": "Tokyo",
         "country": "JP",
         "postal_code": "",
         "site": "US",
@@ -91,12 +91,12 @@ DEFAULTS: dict[str, Any] = {
         "box": {"category_id": "183456", "condition_id": "1000"},
         "bulk": {"category_id": "183454", "condition_id": "4000"},
     },
-    # シングル（未鑑定）の状態。ebay_id は Condition Descriptor「Card Condition（40001）」の値（※要確認）
+    # シングル（未鑑定）の状態。ebay_id は Condition Descriptor「Card Condition（40001）」の値（2026-11-07 テンプレートで確認）
     "raw_conditions": [
         {"key": "nm", "label": "Near Mint or Better", "short": "NM", "ebay_id": "400010"},
-        {"key": "ex", "label": "Lightly Played (Excellent)", "short": "LP", "ebay_id": "400011"},
-        {"key": "vg", "label": "Moderately Played (Very Good)", "short": "MP", "ebay_id": "400012"},
-        {"key": "poor", "label": "Heavily Played (Poor)", "short": "HP", "ebay_id": "400013"},
+        {"key": "ex", "label": "Lightly Played (Excellent)", "short": "LP", "ebay_id": "400015"},
+        {"key": "vg", "label": "Moderately Played (Very Good)", "short": "MP", "ebay_id": "400016"},
+        {"key": "poor", "label": "Heavily Played (Poor)", "short": "HP", "ebay_id": "400017"},
     ],
     # シングルの型番検索に使うカード一覧の取得元（毎日自動で更新。設定画面から手動更新も可）
     "card_catalog_url": "https://hegelgelda.github.io/tcg-catalog/",
