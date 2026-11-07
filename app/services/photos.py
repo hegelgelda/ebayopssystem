@@ -158,7 +158,8 @@ def process_photo(db: Session, photo_id: int) -> Photo:
         img = _open(src)
         img = ImageOps.exif_transpose(img)
         img = img.convert("RGB")
-        cut = _remove_bg(img)
+        from app.settings_store import get_setting
+        cut = _remove_bg(img) if get_setting(db, "remove_background") else None
         photo.bg_removed = cut is not None
         if cut is not None:
             img = cut
@@ -186,6 +187,22 @@ def process_photo(db: Session, photo_id: int) -> Photo:
               after={"photo_id": photo.id, "status": photo.process_status, "bg_removed": photo.bg_removed,
                      "size": [photo.width, photo.height]})
     return photo
+
+
+def reprocess_item_photos(db: Session, user: User, item: Item) -> int:
+    """今の設定（背景除去のオン・オフ）で、在庫の写真を元画像から整形し直す。
+
+    eBay は出品時に取り込んだ画像を URL ごとに使い回すことがあるので、公開URL（トークン）は新しくする。
+    """
+    n = 0
+    for p in item.active_photos():
+        p.public_token = secrets.token_urlsafe(16).replace("-", "x").replace("_", "y")
+        p.process_status = "pending"
+        db.add(Job(kind="process_photo", payload={"photo_id": p.id}))
+        n += 1
+    if n:
+        audit.log(db, audit.Actor.user(user), "item", item.id, "photo.reprocess", after={"photos": n})
+    return n
 
 
 def run_pending_jobs(db: Session, limit: int = 10) -> int:

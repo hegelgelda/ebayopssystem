@@ -36,6 +36,7 @@
   {% if next_item %}<a class="btn primary big" href="/photos/{{ next_item.id }}">次の{{ next_item.category_label }}へ（{{ next_item.key_label }}）</a>{% endif %}
   <a class="btn" href="/photos?category={{ item.category }}">未撮影一覧へ</a>
   <a class="btn" href="/items/{{ item.id }}">在庫詳細</a>
+  {% if item.active_photos() %}<form class="inline" method="post" action="/items/{{ item.id }}/reprocess-photos"><button>今の設定で整形し直す</button></form>{% endif %}
 </div>
 {% endblock %}
 {% block scripts %}

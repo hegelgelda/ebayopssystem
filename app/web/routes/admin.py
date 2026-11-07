@@ -85,6 +85,7 @@ def settings_page(request: Request, user: User = Depends(require_lv2), db: Sessi
         "user": user, "users": users, "schedule": schedule, "overrides": overrides, "json_values": json_values,
         "listing_weekdays": get_setting(db, "listing_weekdays"), "duty_on_holiday": get_setting(db, "duty_on_holiday"),
         "show_pp": get_setting(db, "show_purchase_price_to_lv1"), "adapter": get_setting(db, "ebay_adapter"),
+        "remove_bg": get_setting(db, "remove_background"),
         "templates": templates, "Category": Category,
         "catalog_url": get_setting(db, "card_catalog_url"),
         "catalog_stats": db.execute(select(func.count(CardCatalog.model_id), func.count(func.distinct(CardCatalog.set_id)),
@@ -127,6 +128,7 @@ async def settings_general(request: Request, user: User = Depends(require_lv2), 
     _save(db, user, "listing_weekdays", sorted(int(x) for x in form.getlist("listing_weekdays")))
     _save(db, user, "duty_on_holiday", form.get("duty_on_holiday") == "1")
     _save(db, user, "show_purchase_price_to_lv1", form.get("show_pp") == "1")
+    _save(db, user, "remove_background", form.get("remove_bg") == "1")
     _save(db, user, "ship_due_notify_hour_jst", int(form.get("ship_due_notify_hour_jst") or 9))
     _save(db, user, "ship_due_escalate_hour_jst", int(form.get("ship_due_escalate_hour_jst") or 12))
     adapter = form.get("ebay_adapter") or "manual"

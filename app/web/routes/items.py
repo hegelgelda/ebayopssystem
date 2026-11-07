@@ -318,6 +318,16 @@ async def api_upload_photo(item_id: int, kind: str = Form(...), file: UploadFile
     return {"photo": _photo_json(p), "item_status": item.status, "item_status_label": IS.LABELS[item.status]}
 
 
+@router.post("/items/{item_id}/reprocess-photos")
+def item_reprocess_photos(item_id: int, request: Request, user: User = Depends(current_user),
+                          db: Session = Depends(get_db)):
+    item = item_svc.get_item(db, item_id)
+    n = photo_svc.reprocess_item_photos(db, user, item)
+    db.commit()
+    flash(request, f"写真{n}枚を今の設定で整形し直しています（数秒〜数十秒）")
+    return back(request, f"/photos/{item.id}")
+
+
 @router.get("/media/original/{photo_id}")
 def media_original(photo_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = db.get(Photo, photo_id)

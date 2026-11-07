@@ -13,6 +13,8 @@ from app.models import Setting
 DEFAULTS: dict[str, Any] = {
     # eBayアダプタ（Phase 1 は manual のみ）
     "ebay_adapter": "manual",
+    # 撮影した写真の背景除去（切り出し）。オフなら撮った写真をそのまま使う（向きの補正と長辺1600pxへの縮小のみ）
+    "remove_background": False,
     # 出品日（0=月 … 6=日）。初期値は火・金
     "listing_weekdays": [1, 4],
     # 祝日に曜日担当を優先するか（F5-3。初期値は祝日＝不在）

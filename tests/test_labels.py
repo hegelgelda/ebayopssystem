@@ -81,3 +81,32 @@ def test_psa_intake_grade_buttons_and_required_grade(admin_client, users):
     r = register(admin_client, cert="61616161", grade="")
     assert r.status_code == 400 and "グレードを選んでください" in r.text
     assert register(admin_client, cert="61616161").status_code == 303
+
+
+def test_photos_used_as_taken_and_reprocess(admin_client, db, users, monkeypatch):
+    """背景除去は初期値オフ（撮った写真をそのまま縮小）。オンにすると除去し、整形し直すと公開URLが変わる。"""
+    from app.models import Photo
+    from app.services import photos
+    from tests.test_flow import register, run_jobs, upload
+    calls = []
+    monkeypatch.setattr(photos, "_remove_bg", lambda img: calls.append(1) or img)
+    item_id = done_id(register(admin_client, cert="71717171"))
+    upload(admin_client, item_id, "front", n=71)
+    upload(admin_client, item_id, "back", n=71)
+    run_jobs()
+    db.expire_all()
+    ps = db.query(Photo).filter(Photo.item_id == item_id).all()
+    assert calls == [] and all(p.process_status == "done" and not p.bg_removed for p in ps)
+    assert max(ps[0].width, ps[0].height) == 1600
+
+    # 設定でオンにして整形し直す → 背景除去が呼ばれ、公開URLが新しくなる
+    admin_client.post("/settings/general", data={"remove_bg": "1", "listing_weekdays": ["1", "4"]})
+    old_urls = {p.id: p.public_token for p in ps}
+    r = admin_client.post(f"/items/{item_id}/reprocess-photos")
+    assert r.status_code == 303
+    run_jobs()
+    db.expire_all()
+    ps = db.query(Photo).filter(Photo.item_id == item_id).all()
+    assert len(calls) == 2 and all(p.bg_removed for p in ps)
+    assert all(p.public_token != old_urls[p.id] for p in ps)
+    assert admin_client.get("/img/" + ps[0].processed_path).status_code == 200
