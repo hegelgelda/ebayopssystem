@@ -3,6 +3,19 @@
 {% block title %}注文一覧{% endblock %}
 {% block content %}
 <h1>注文一覧</h1>
+<details class="card" id="import">
+  <summary><b>eBayの注文レポートを取り込む</b> <span class="small muted">（落札・購入と支払を自動で記録）</span></summary>
+  <ol class="small">
+    <li>Seller Hub の <b>Reports → Downloads</b> を開き、<b>Download report</b> を押す</li>
+    <li>Source（種類）は <b>Orders</b>、Type は <b>All orders</b>、期間は「直近7日」などを選んで <b>Download</b></li>
+    <li>数分後に一覧に出るファイル（CSV）をダウンロードし、下で選んで「取り込む」</li>
+  </ol>
+  <p class="small muted">同じファイルを何度取り込んでも二重登録はされません。支払が済んだ注文は支払も記録されます（毎朝・夕に取り込むと注文の手入力が不要になります）。</p>
+  <form method="post" action="/orders/import" enctype="multipart/form-data" class="row">
+    <div><input type="file" name="file" accept=".csv,text/csv" required></div>
+    <div><button class="primary">取り込む</button></div>
+  </form>
+</details>
 <form class="card" method="get">
   <div class="row">
     <div><label>状態</label><select name="status"><option value="">すべて</option><option value="open" {% if f.status == 'open' %}selected{% endif %}>対応中（完了・取消以外）</option>

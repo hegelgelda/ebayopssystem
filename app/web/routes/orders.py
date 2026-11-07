@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -13,7 +13,7 @@ from app.db import get_db
 from app.models import (
     AuditLog, ChecklistItem, Comment, Item, Notification, Order, OrderStatus as OS, User,
 )
-from app.services import notify, orders as order_svc
+from app.services import notify, order_import, orders as order_svc
 from app.services.errors import ServiceError
 from app.settings_store import get_setting
 from app.web.deps import current_user, flash, render, require_lv2
@@ -46,6 +46,21 @@ def orders_list(request: Request, status: str = "", assignee: str = "", date_fro
     return render(request, "orders_list.html", {
         "user": user, "orders": rows, "users": users,
         "f": {"status": status, "assignee": assignee, "date_from": date_from, "date_to": date_to, "q": q}})
+
+
+@router.post("/orders/import")
+async def orders_import(request: Request, file: UploadFile = File(...), user: User = Depends(current_user),
+                        db: Session = Depends(get_db)):
+    """Seller Hub の注文レポートCSVを取り込んで、落札・購入と支払を記録する。"""
+    data = await file.read()
+    res = order_import.import_orders_report(db, user, data)
+    db.commit()
+    msg = (f"取り込みました：新規 {len(res.created)}件 / 支払記録 {len(res.paid)}件 / "
+           f"手入力分と照合 {len(res.linked)}件 / 変更なし {len(res.unchanged)}件 / スキップ {len(res.skipped)}件")
+    flash(request, msg, "error" if res.skipped and not (res.created or res.paid or res.linked) else "ok")
+    for label, err in res.skipped:
+        flash(request, f"{label}：{err}", "error")
+    return to("/orders?status=open")
 
 
 @router.get("/orders/{order_id}")
