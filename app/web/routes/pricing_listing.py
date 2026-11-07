@@ -135,7 +135,8 @@ def draft_preview(draft_id: int, request: Request, user: User = Depends(current_
     if not d:
         raise NotFound("下書きが見つかりません")
     item = item_svc.get_item(db, d.item_id)
-    return render(request, "draft_preview.html", {"user": user, "d": d, "item": item,
+    photos = sorted(item.active_photos(), key=lambda p: p.seq)
+    return render(request, "draft_preview.html", {"user": user, "d": d, "item": item, "photos": photos,
                                                   "images": listing_svc.image_urls(item)})
 
 

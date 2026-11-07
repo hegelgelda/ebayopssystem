@@ -95,6 +95,12 @@
     {% if item.category == 'single' %}
     <div><label>状態</label><select name="condition">{% for c in conditions %}<option value="{{ c.key }}" {% if item.condition == c.key %}selected{% endif %}>{{ c.short }} — {{ c.label }}</option>{% endfor %}</select></div>
     {% endif %}
+    {% if item.category == 'bulk' %}
+    <div><label>レアリティ</label><input type="text" name="rarity" value="{{ item.rarity or '' }}"></div>
+    <div><label>枚数</label><input type="number" name="card_count" min="1" value="{{ item.card_count or '' }}"></div>
+    <div><label>収録セット（セットIDをカンマ区切り）</label><input type="text" name="lot_sets" value="{{ (item.lot_sets or []) | map(attribute='id') | join(',') }}" placeholder="SV4M,SV5K"></div>
+    <div><label>状態</label><select name="condition"><option value="">（指定しない）</option>{% for c in conditions %}<option value="{{ c.key }}" {% if item.condition == c.key %}selected{% endif %}>{{ c.short }} — {{ c.label }}</option>{% endfor %}</select></div>
+    {% endif %}
     {% if item.category in ('single','pack','box') %}
     <div><label>数量</label><input type="number" name="quantity" min="{{ [item.quantity_sold, 1]|max }}" value="{{ item.quantity }}" {% if item.status in ('LISTED','SOLD') %}readonly{% endif %}></div>
     {% endif %}

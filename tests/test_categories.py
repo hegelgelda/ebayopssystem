@@ -170,7 +170,7 @@ def test_category_rules(admin_client, db, env, users):
     r = intake(admin_client, category="pack", card_name_en="Pack", quantity="5", listing_format="auction")
     assert r.status_code == 400
     # バルクは全体写真1枚で撮影済み、数量は常に1
-    r = intake(admin_client, category="bulk", card_name_jp="ノーマル100枚", memo="100 cards", quantity="9")
+    r = intake(admin_client, category="bulk", card_name_jp="ノーマル100枚", memo="100 cards", quantity="9", card_count="100")
     bulk_id = done_id(r)
     r = upload(admin_client, bulk_id, "front", n=99)
     assert r.json()["item_status"] == "PHOTOGRAPHED"
@@ -349,3 +349,47 @@ def test_regenerate_draft_after_csv_export(admin_client, db, env, users):
     db.expire_all()
     it = db.get(Item, item_id)
     assert it.status == "PRICED" and it.listing_format == "auction"
+
+
+def test_bulk_ar_lot(admin_client, db, env, users):
+    """バルクは AR まとめ売りが標準：枚数必須、収録セットが1つならセット名、複数なら Mixed Sets（Set は空）。"""
+    from app.models import Item
+    from app.services import listing as listing_svc
+    p = env / "sets.csv"
+    p.write_text("model_id,set_name,name_jp,name_en\nSV4M-78,Future Flash,テツノコウベ,Iron Jugulis\n"
+                 "SV5K-80,Wild Force,X,Y\n", encoding="utf-8")
+    from app.services import importers
+    importers.import_cards(db, p)
+    db.commit()
+    assert intake(admin_client, category="bulk").status_code == 400  # 枚数なし
+
+    one = done_id(intake(admin_client, category="bulk", card_count="10", lot_sets="SV4M", condition="nm"))
+    two = done_id(intake(admin_client, category="bulk", card_count="12", lot_sets="SV4M,SV5K,SV4M", rarity="sar"))
+    db.expire_all()
+    a, b = db.get(Item, one), db.get(Item, two)
+    assert a.rarity == "AR" and a.card_count == 10 and a.set_name == "Future Flash" and a.card_name_jp == "ARまとめ 10枚 Future Flash"
+    assert b.rarity == "SAR" and [s["id"] for s in b.lot_sets] == ["SV4M", "SV5K"] and b.set_id is None
+    assert b.card_name_jp == "SARまとめ 12枚 複数弾"
+
+    t1, d1, s1, _ = listing_svc.render(db, a)
+    assert t1 == "Japanese Pokemon Card AR Lot of 10 Future Flash"
+    assert s1["Set"] == "Future Flash" and s1["Number of Cards"] == "10" and s1["Card Condition"] == "Near Mint or Better"
+    t2, d2, s2, _ = listing_svc.render(db, b)
+    assert t2 == "Japanese Pokemon Card SAR Lot of 12 Mixed Sets"
+    assert "Set" not in s2 and "Card Condition" not in s2  # 複数弾は Set を入れない（eBay で任意項目）
+    assert "Sets included: Future Flash, Wild Force" in d2
+    db.commit()  # render がテンプレートを保存するので、画面からの更新の前に確定しておく
+
+    # 在庫詳細で収録セットを直せる
+    r = admin_client.post(f"/items/{two}/edit", data={"version": str(b.version), "lot_sets": "SV5K"})
+    assert r.status_code == 303
+    db.expire_all()
+    assert db.get(Item, two).set_name == "Wild Force"
+
+
+def test_draft_preview_shows_photos_in_order(admin_client, db, users):
+    from tests.test_flow import register
+    item_id = done_id(register(admin_client, cert="81818181"))
+    draft_id = ready_item(admin_client, item_id, start="50")
+    page = admin_client.get(f"/drafts/{draft_id}").text
+    assert "1枚目＝メイン" in page and "1. 表" in page and "2. 裏" in page and 'id="lightbox"' in page

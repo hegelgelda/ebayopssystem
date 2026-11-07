@@ -134,6 +134,10 @@ class Item(Base):
     quantity_sold: Mapped[int] = mapped_column(Integer, default=0)
     condition: Mapped[str | None] = mapped_column(String(16))  # シングル（未鑑定）の状態
     label_printed_at: Mapped[datetime | None] = mapped_column(DateTime)  # SKUラベルを印刷した日時
+    # バルク（まとめ売り）用：枚数・レアリティ（例 AR）・収録セット [{"id": "SV4M", "name": "Future Flash"}, ...]
+    card_count: Mapped[int | None] = mapped_column(Integer)
+    rarity: Mapped[str | None] = mapped_column(String(16))
+    lot_sets: Mapped[list | None] = mapped_column(JSON)
     card_name_jp: Mapped[str | None] = mapped_column(String(200))
     card_name_en: Mapped[str | None] = mapped_column(String(200))
     set_id: Mapped[str | None] = mapped_column(String(32), index=True)

@@ -16,7 +16,8 @@ from app.settings_store import get_setting
 from app.timeutil import utcnow
 
 EDITABLE_FIELDS = ["model_id", "card_name_jp", "card_name_en", "set_id", "set_name", "card_number", "grader",
-                   "grade", "psa_population", "year", "storage_box", "storage_slot", "memo", "condition"]
+                   "grade", "psa_population", "year", "storage_box", "storage_slot", "memo", "condition",
+                   "rarity", "card_count"]
 LV2_FIELDS = ["purchase_price_jpy", "purchase_date"]
 
 
@@ -64,6 +65,13 @@ def _clean(data: dict[str, Any]) -> dict[str, Any]:
             out["psa_population"] = int(out["psa_population"])
         except ValueError:
             raise ServiceError("Populationは数値で入力してください")
+    if out.get("card_count") is not None:
+        try:
+            out["card_count"] = int(str(out["card_count"]).replace(",", ""))
+        except ValueError:
+            raise ServiceError("枚数は整数で入力してください")
+        if out["card_count"] < 1:
+            raise ServiceError("枚数が不正です")
     if out.get("purchase_price_jpy") is not None:
         try:
             out["purchase_price_jpy"] = int(str(out["purchase_price_jpy"]).replace(",", ""))
@@ -134,8 +142,13 @@ def register_item(db: Session, user: User, data: dict[str, Any]) -> Item:
         keys = [c["key"] for c in get_setting(db, "raw_conditions") or []]
         if d.get("condition") not in keys:
             raise ServiceError("カードの状態を選んでください")
-    elif category != Category.PSA:
+    elif category not in (Category.PSA, Category.BULK):
         d["condition"] = None
+    if category == Category.BULK:
+        _prepare_bulk(db, d, data)
+    else:
+        d["rarity"] = None
+        d["card_count"] = None
     if category in (Category.PACK, Category.BOX, Category.BULK):
         if not (d.get("card_name_jp") or d.get("card_name_en") or d.get("set_name")):
             raise ServiceError("商品名（またはセット名）を入力してください")
@@ -168,6 +181,40 @@ def register_item(db: Session, user: User, data: dict[str, Any]) -> Item:
               after={"category": category, "sku": item.sku, "cert_number": cert, "listing_format": fmt,
                      "quantity": quantity, **{k: v for k, v in d.items()}})
     return item
+
+
+def parse_lot_sets(db: Session, raw: Any) -> list[dict[str, str]]:
+    """「SV4M,SV5K」のようなセットIDの並びを、カード一覧のセット名つきのリストにする（重複は除く）。"""
+    from app.models import CardCatalog
+    ids: list[str] = []
+    for x in str(raw or "").replace("、", ",").split(","):
+        x = x.strip()
+        if x and x not in ids:
+            ids.append(x)
+    out = []
+    for sid in ids:
+        name = db.scalar(select(func.max(CardCatalog.set_name)).where(CardCatalog.set_id == sid))
+        out.append({"id": sid, "name": name or sid})
+    return out
+
+
+def _prepare_bulk(db: Session, d: dict[str, Any], data: dict[str, Any]) -> None:
+    """バルク（まとめ売り）：枚数は必須、レアリティの初期値は AR、収録セットは複数可。"""
+    d["rarity"] = (d.get("rarity") or "AR").upper()
+    if not d.get("card_count"):
+        raise ServiceError("まとめ売りの枚数を入力してください")
+    sets = parse_lot_sets(db, data.get("lot_sets"))
+    d["lot_sets"] = sets or None
+    if len(sets) == 1:
+        d["set_id"], d["set_name"] = sets[0]["id"], sets[0]["name"]
+    else:  # 複数の弾にまたがる場合はセットを1つに決めない（eBay の Set は任意項目）
+        d["set_id"] = d["set_name"] = None
+    if not d.get("card_name_jp"):
+        where = sets[0]["name"] if len(sets) == 1 else ("複数弾" if sets else "")
+        d["card_name_jp"] = f"{d['rarity']}まとめ {d['card_count']}枚 {where}".strip()
+    keys = [c["key"] for c in get_setting(db, "raw_conditions") or []]
+    if d.get("condition") and d["condition"] not in keys:
+        d["condition"] = None
 
 
 def set_listing_format(db: Session, user: User, item: Item, fmt: str, version: int | None) -> None:
@@ -213,6 +260,13 @@ def update_item(db: Session, user: User, item: Item, data: dict[str, Any], versi
             raise ServiceError("モデルIDは必須です")
         before[k], after[k] = old, v
         setattr(item, k, v)
+    if "lot_sets" in data and item.category == Category.BULK:
+        sets = parse_lot_sets(db, data.get("lot_sets"))
+        if [x["id"] for x in (item.lot_sets or [])] != [x["id"] for x in sets]:
+            before["lot_sets"], after["lot_sets"] = item.lot_sets, sets
+            item.lot_sets = sets or None
+            single = sets[0] if len(sets) == 1 else None
+            item.set_id, item.set_name = (single["id"], single["name"]) if single else (None, None)
     qty = _int_field(data.get("quantity"), "数量", 1) if "quantity" in data else None
     if qty is not None and qty != item.quantity:
         if item.category in (Category.PSA, Category.BULK):

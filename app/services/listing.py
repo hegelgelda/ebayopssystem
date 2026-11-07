@@ -121,16 +121,26 @@ Shipped in a sleeve and top loader.</p>
             "Game": "Pokémon TCG", "Set": "{{ set_name or set_id }}", "Configuration": "Box", "Number of Boxes": "1",
             "Language": "Japanese", "Manufacturer": "The Pokémon Company"}),
     },
+    # バルク：AR などのまとめ売り（CCG Mixed Card Lots）。収録セットが1つならその名前、複数なら "Mixed Sets"
     Category.BULK: {
-        "title": "{{ card_name_en or card_name_jp }} Japanese Pokemon Card Bulk Lot",
+        "title": "{% if card_name_en %}{{ card_name_en }}{% else %}Japanese Pokemon Card {{ rarity }} Lot"
+                 "{% if card_count %} of {{ card_count }}{% endif %} {{ lot_sets_label }}{% endif %}",
         "description": """<div style="font-family:Arial,sans-serif;max-width:800px">
-<h2>{{ card_name_en or card_name_jp }} (Japanese Pokemon Card Lot)</h2>
-<p>{{ memo }}</p>
-<p>You will receive the exact lot shown in the photos.</p>
+<h2>Japanese Pokemon Card {{ rarity }} Lot{% if card_count %} &ndash; {{ card_count }} cards{% endif %}</h2>
+<ul>
+  {% if card_count %}<li>Number of cards: {{ card_count }}</li>{% endif %}
+  {% if rarity %}<li>Rarity: {{ rarity }}</li>{% endif %}
+  <li>Language: Japanese</li>
+  {% if lot_sets %}<li>Sets included: {{ lot_sets | map(attribute='name') | join(', ') }}</li>{% endif %}
+  {% if condition_label %}<li>Condition: {{ condition_label }} (ungraded)</li>{% endif %}
+</ul>
+{% if memo %}<p>{{ memo }}</p>{% endif %}
+<p>You will receive the exact cards shown in the photos.</p>
 """ + _SHIPPING_RETURNS,
         "item_specifics": _specs({
-            "Game": "Pokémon TCG", "Language": "Japanese",
-            "Manufacturer": "The Pokémon Company"}),
+            "Game": "Pokémon TCG", "Set": "{{ set_name if lot_sets|length == 1 else '' }}",
+            "Number of Cards": "{{ card_count }}", "Card Condition": "{{ condition_label }}",
+            "Language": "Japanese", "Manufacturer": "The Pokémon Company"}),
     },
 }
 
@@ -191,7 +201,10 @@ def context_for(db: Session, item: Item, quantity: int | None = None) -> dict[st
         "grader_full": GRADER_FULL.get(item.grader or "", item.grader or ""), "year": item.year or "",
         "population": item.psa_population or "", "condition_label": cond.get("label", ""),
         "condition_short": cond.get("short", ""), "quantity": quantity if quantity is not None else item.remaining,
-        "memo": item.memo or "",
+        "memo": item.memo or "", "rarity": item.rarity or "", "card_count": item.card_count or "",
+        "lot_sets": item.lot_sets or [],
+        "lot_sets_label": ((item.lot_sets or [{}])[0].get("name", "") if len(item.lot_sets or []) == 1
+                           else ("Mixed Sets" if item.lot_sets else "")),
     }
 
 

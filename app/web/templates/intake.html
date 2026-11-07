@@ -6,6 +6,7 @@
 {% if last %}<div class="flash ok">直前の登録：<a href="/items/{{ last.id }}">{{ last.category_label }} {{ last.key_label }} {{ last.display_name }}</a>（{{ last.format_label }}）・ <a href="/photos/{{ last.id }}">このまま撮影する</a>{% if last.category != 'psa' %} ・ <a href="/labels?ids={{ last.id }}">ラベルを印刷</a>{% endif %}</div>{% endif %}
 {% if labels_pending %}<p class="small"><a href="/labels">🏷 ラベル未印刷 {{ labels_pending }}件 → まとめて印刷</a></p>{% endif %}
 
+<div class="intake-grid"><div class="intake-left">
 <div class="tabs" id="cat-tabs">
   {% for c in Category.ALL %}<button type="button" class="tab" data-cat="{{ c }}">{{ Category.LABELS[c] }}</button>{% endfor %}
 </div>
@@ -37,6 +38,18 @@
   <p class="small muted" style="margin:4px 0 0">Population は任意です。必要なら「PSAで確認」で cert のページを開いて下の欄に入れてください。</p>
 </div>
 
+{# ---- バルク：収録セット（複数可） ---- #}
+<div class="card" data-cats="bulk">
+  <h3 style="margin:0 0 6px">収録セット</h3>
+  <p class="small muted" style="margin:0 0 6px">1つならタイトルにセット名、複数の弾にまたがるなら「Mixed Sets」になります。未選択でも登録できます。</p>
+  <div class="row">
+    <div><input type="search" id="lot-set-q" placeholder="SV4M / Future Flash / 未来の閃光"></div>
+    <div style="flex:0 0 auto"><button type="button" id="lot-set-btn">セットを検索</button></div>
+  </div>
+  <div class="cand-list" id="lot-set-cands"></div>
+  <div class="chips" id="lot-set-chips"></div>
+</div>
+
 {# ---- シングル：型番から検索 ---- #}
 <div class="card" data-cats="single">
   <div class="row">
@@ -58,6 +71,7 @@
   <p class="small muted">一覧にないセットは、下の欄に直接入力して登録できます。</p>
 </div>
 
+</div><div class="intake-right">
 <form method="post" action="/intake" class="card" id="intake-form">
   <input type="hidden" name="category" id="f-category" value="{{ cat or 'psa' }}">
   <input type="hidden" name="info_source" id="f-info_source" value="{{ f.get('info_source', 'manual') }}">
@@ -89,8 +103,19 @@
     </select></div>
   </div>
   <div data-cats="bulk">
-    <label>内容（説明文にそのまま入ります。例：Japanese Pokemon cards 100 cards, commons/uncommons, mixed sets）</label>
+    <div class="row">
+      <div><label>レアリティ</label><input type="text" name="rarity" id="f-rarity" value="{{ f.get('rarity', 'AR') }}" list="rarity-list" autocapitalize="characters">
+        <datalist id="rarity-list">{% for r in ['AR', 'SAR', 'SR', 'UR', 'CHR', 'CSR', 'HR', 'RR', 'R'] %}<option value="{{ r }}">{% endfor %}</datalist></div>
+      <div><label>枚数 *</label><input type="number" name="card_count" id="f-card_count" min="1" inputmode="numeric" value="{{ f.get('card_count', '') }}"></div>
+      <div><label>状態</label><select name="condition" id="f-condition-bulk">
+        <option value="">（指定しない）</option>
+        {% for c in conditions %}<option value="{{ c.key }}" {% if f.get('condition', 'nm') == c.key %}selected{% endif %}>{{ c.short }} — {{ c.label }}</option>{% endfor %}
+      </select></div>
+    </div>
+    <input type="hidden" name="lot_sets" id="f-lot_sets" value="{{ f.get('lot_sets', '') }}">
+    <label>内容（説明文に入ります。例：入っているカード名の一覧）</label>
     <textarea name="memo" id="f-memo-bulk" rows="3" style="font-family:inherit;font-size:15px">{{ f.get('memo', '') }}</textarea>
+    <p class="small" id="bulk-title-preview" style="margin:6px 0 0"></p>
   </div>
 
   <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
@@ -112,6 +137,7 @@
   <p class="small muted" id="qty-note" hidden>数量が2以上の在庫は通常出品のみです（1つの出品で複数個を販売し、売り切れたら売却済みになります）。</p>
   <div class="actions"><button class="primary big" id="submit-btn">登録して次へ</button></div>
 </form>
+</div></div>
 {% endblock %}
 {% block scripts %}
 <script src="/static/scan.js"></script>
@@ -134,8 +160,10 @@
       el.querySelectorAll('input,select,textarea').forEach(i => i.disabled = !on);
     });
     const sealed = c === 'pack' || c === 'box';
-    $('lbl-name-jp').textContent = c === 'bulk' ? '名称（日本語・管理用）*' : sealed ? '商品名（日本語）' : 'カード名（日本語）';
-    $('lbl-name-en').textContent = c === 'bulk' ? 'タイトル用の名称（英語）' : sealed ? '商品名（英語・タイトルに使う）' : 'カード名（英語）';
+    $('lbl-name-jp').textContent = c === 'bulk' ? '名称（日本語・管理用。空欄なら自動）' : sealed ? '商品名（日本語）' : 'カード名（日本語）';
+    $('lbl-name-en').textContent = c === 'bulk' ? 'タイトル（英語。空欄なら自動）' : sealed ? '商品名（英語・タイトルに使う）' : 'カード名（英語）';
+    $('f-card_count').required = c === 'bulk';
+    bulkPreview();
     $('f-cert_number').required = c === 'psa';
     $('f-condition').required = c === 'single';
     const fmt = DEFAULT_FMT[c] || 'auction';
@@ -248,6 +276,42 @@
   wireSearch('num', () => { $('f-info_source').value = 'catalog'; $('f-condition').focus(); });
   wireSearch('psa-num', afterPsaPick);
   $('cert-manual').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lookup($('cert-manual').value); } });
+
+  // ---- バルク：収録セット（複数可）とタイトル案 ----
+  let lotSets = [];
+  function renderLotSets() {
+    const box = $('lot-set-chips'); box.innerHTML = '';
+    lotSets.forEach((st, i) => {
+      const chip = document.createElement('span'); chip.className = 'chip';
+      chip.textContent = `${st.id} ${st.name || ''}`;
+      const x = document.createElement('button'); x.type = 'button'; x.textContent = '×'; x.title = '外す';
+      x.onclick = () => { lotSets.splice(i, 1); renderLotSets(); };
+      chip.appendChild(x); box.appendChild(chip);
+    });
+    $('f-lot_sets').value = lotSets.map(st => st.id).join(',');
+    bulkPreview();
+  }
+  function bulkPreview() {
+    const el = $('bulk-title-preview'); if (!el) return;
+    if ($('f-card_name_en').value.trim()) { el.textContent = ''; return; }
+    const n = $('f-card_count').value, r = ($('f-rarity').value || 'AR').toUpperCase();
+    const where = lotSets.length === 1 ? (lotSets[0].name || lotSets[0].id) : (lotSets.length ? 'Mixed Sets' : '');
+    el.textContent = 'タイトル案：' + `Japanese Pokemon Card ${r} Lot${n ? ' of ' + n : ''} ${where}`.trim();
+  }
+  ['f-card_count', 'f-rarity', 'f-card_name_en'].forEach(id => $(id).addEventListener('input', bulkPreview));
+  async function searchLotSets() {
+    const r = await fetch('/api/catalog/sets?q=' + encodeURIComponent($('lot-set-q').value));
+    const js = await r.json(); const box = $('lot-set-cands'); box.innerHTML = '';
+    js.sets.forEach(st => box.appendChild(candButton(`＋ ${st.set_id} ${st.set_name || ''}${st.set_name_jp ? '（' + st.set_name_jp + '）' : ''}`, () => {
+      if (!lotSets.some(x => x.id === st.set_id)) lotSets.push({id: st.set_id, name: st.set_name || st.set_id});
+      renderLotSets(); box.innerHTML = ''; $('lot-set-q').value = ''; $('lot-set-q').focus();
+    })));
+    if (!js.sets.length) box.innerHTML = '<span class="small muted">見つかりませんでした</span>';
+  }
+  $('lot-set-btn').onclick = searchLotSets;
+  $('lot-set-q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchLotSets(); } });
+  // 入力エラーで戻ってきたときは選んでいたセットを復元する
+  if ($('f-lot_sets').value) { lotSets = $('f-lot_sets').value.split(',').filter(Boolean).map(id => ({id, name: ''})); renderLotSets(); }
 
   // ---- パック・BOX：セット検索 ----
   async function searchSets() {
