@@ -52,7 +52,8 @@ def _login(request: Request, db: Session, user: User, via: str):
     audit.log(db, audit.Actor.user(user), "user", user.id, "user.login", after={"via": via})
     db.commit()
     nxt = request.query_params.get("next") or "/"
-    return RedirectResponse(nxt if nxt.startswith("/") else "/", status_code=303)
+    safe = nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt
+    return RedirectResponse(nxt if safe else "/", status_code=303)
 
 
 @router.get("/auth/callback")
