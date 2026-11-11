@@ -46,6 +46,14 @@ def order_label(o: Order) -> str:
     return f"#{o.id} {it.display_name}{qty} ({it.key_label})"
 
 
+def listing_remaining(db: Session, listing: Listing) -> int:
+    """その eBay 出品で、まだ売れていない数量（取消した注文は数えない）。"""
+    from sqlalchemy import func
+    sold = db.scalar(select(func.coalesce(func.sum(Order.quantity), 0)).where(
+        Order.listing_id == listing.id, Order.status != OS.CANCELLED)) or 0
+    return max(0, (listing.quantity or 1) - int(sold))
+
+
 def create_order_from_sale(db: Session, user: User, listing: Listing, *, buyer: str, amount: Decimal,
                            currency: str, ship_country: str, sold_at: datetime | None, ebay_order_id: str | None,
                            source: str, quantity: int = 1) -> Order:
@@ -61,6 +69,9 @@ def create_order_from_sale(db: Session, user: User, listing: Listing, *, buyer: 
         raise ServiceError("数量は整数で入力してください")
     if quantity < 1 or quantity > item.remaining:
         raise ServiceError(f"数量は1〜{item.remaining}で入力してください（残り {item.remaining}）")
+    left = listing_remaining(db, listing)
+    if quantity > left:
+        raise ServiceError(f"この出品の残りは {left} 点です（出品した数量 {listing.quantity}）")
     if listing.format == LF.AUCTION and quantity != 1:
         raise ServiceError("オークションの数量は1です")
     if amount is None or amount <= 0:
@@ -82,6 +93,13 @@ def create_order_from_sale(db: Session, user: User, listing: Listing, *, buyer: 
         # 売り切れ：出品も在庫も終わり
         listing.status = "sold"
         states.transition_item(db, item, IS.SOLD, audit.Actor.user(user), action="item.sold")
+    elif listing_remaining(db, listing) == 0:
+        # 出品した数量は売り切れたが、在庫はまだ残っている：eBay の出品は終わるので再出品へ
+        listing.status = "sold"
+        states.transition_item(db, item, IS.PRICED, audit.Actor.user(user), action="item.listing_sold_out",
+                               reason=f"出品分が売り切れ（在庫の残り {item.remaining}）")
+        notify.enqueue_post(db, "listing", f"🔁 出品した数量が売り切れました。在庫が {item.remaining} 点残っています："
+                                           f"{item.key_label} {item.display_name}。出品準備から再出品してください")
     else:
         # 通常出品で在庫が残っている：出品はそのまま続く
         item.version += 1

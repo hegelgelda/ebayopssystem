@@ -142,11 +142,12 @@ def draft_preview(draft_id: int, request: Request, user: User = Depends(current_
 
 @router.post("/drafts/{draft_id}/edit")
 def draft_edit(draft_id: int, request: Request, title: str = Form(""), duration_days: str = Form(""),
-               user: User = Depends(current_user), db: Session = Depends(get_db)):
+               quantity: str = Form(""), user: User = Depends(current_user), db: Session = Depends(get_db)):
     d = db.get(ListingDraft, draft_id)
     if not d:
         raise NotFound("下書きが見つかりません")
-    listing_svc.update_draft(db, user, d, {"title": title, "duration_days": duration_days or None})
+    listing_svc.update_draft(db, user, d, {"title": title, "duration_days": duration_days or None,
+                                           "quantity": quantity or None})
     db.commit()
     flash(request, "保存しました")
     return to(f"/drafts/{d.id}")

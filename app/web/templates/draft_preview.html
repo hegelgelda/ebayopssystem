@@ -49,7 +49,9 @@
           <div><label>即決価格</label><input type="text" value="{{ d.bin_price|money(d.currency) if d.bin_price else '—' }}" readonly></div>
           {% else %}
           <div><label>販売価格</label><input type="text" value="{{ d.start_price|money(d.currency) }}" readonly></div>
-          <div><label>数量</label><input type="text" value="{{ d.quantity }}" readonly></div>
+          <div><label>出品する数量（在庫の残り {{ item.remaining }}）</label>
+            <input type="number" name="quantity" value="{{ d.quantity }}" min="1" max="{{ item.remaining }}" {% if d.status != 'draft' %}readonly{% endif %}>
+            {% if d.status == 'draft' %}<div class="small muted">在庫より少なく出品できます。在庫そのものの数は<a href="/items/{{ item.id }}">在庫詳細</a>で変更</div>{% endif %}</div>
           {% endif %}
         </div>
         {% if d.status == 'draft' %}<div class="actions"><button>保存</button></div>{% endif %}

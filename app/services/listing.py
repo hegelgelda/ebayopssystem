@@ -312,6 +312,21 @@ def update_draft(db: Session, user: User, draft: ListingDraft, data: dict[str, A
             raise ServiceError("タイトルは80文字以内にしてください")
         before["title"], after["title"] = draft.title, t
         draft.title = t
+    if data.get("quantity") not in (None, ""):
+        try:
+            qty = int(data["quantity"])
+        except (TypeError, ValueError):
+            raise ServiceError("数量は整数で入力してください")
+        if draft.format == LF.AUCTION and qty != 1:
+            raise ServiceError("オークションの数量は1です")
+        item = db.get(Item, draft.item_id)
+        assert item is not None
+        if qty < 1 or qty > item.remaining:
+            raise ServiceError(f"数量は1〜{item.remaining}（在庫の残り）で入力してください。"
+                               "在庫そのものの数は在庫詳細で変更できます")
+        if qty != draft.quantity:
+            before["quantity"], after["quantity"] = draft.quantity, qty
+            draft.quantity = qty
     if data.get("duration_days") and draft.format == LF.AUCTION:
         before["duration_days"], after["duration_days"] = draft.duration_days, int(data["duration_days"])
         draft.duration_days = int(data["duration_days"])

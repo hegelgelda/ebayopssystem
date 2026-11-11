@@ -640,3 +640,50 @@ def test_migration_keeps_custom_handling_days(env):
     val = con.execute("SELECT value FROM settings WHERE key='ship_business_days'").fetchone()[0]
     con.close()
     assert body == "ship within {{ handling_days }} business days now" and str(val) == "3"
+
+
+def test_draft_quantity_edit_and_listing_sell_out(admin_client, db, env, users):
+    """出品プレビューで数量を在庫以下に変えられる。出品分が売り切れたら在庫が残っていても価格確定に戻る。"""
+    import re
+    from app.adapters.manual import mark_listed
+    from app.models import Item, Listing, ListingDraft, User
+    iid = done_id(intake(admin_client, category="single", model_id="SV2a-025", card_name_en="Pikachu",
+                         condition="nm", quantity="3", listing_format="fixed"))
+    upload(admin_client, iid, "front", n=31)
+    run_jobs()
+    admin_client.post(f"/pricing/{iid}/approve", data={"start": "10"})
+    r = admin_client.post("/listings/generate", data={"item_id": str(iid)})
+    did = int(r.headers["location"].rsplit("/", 1)[1])
+    page = admin_client.get(f"/drafts/{did}").text
+    assert 'name="quantity"' in page and 'max="3"' in page
+    admin_client.post(f"/drafts/{did}/edit", data={"title": "Pikachu test", "quantity": "5"})  # 在庫超え → 不可
+    db.expire_all()
+    assert db.get(ListingDraft, did).quantity == 3
+    admin_client.post(f"/drafts/{did}/edit", data={"title": "Pikachu test", "quantity": "2"})
+    db.expire_all()
+    assert db.get(ListingDraft, did).quantity == 2
+    assert admin_client.post(f"/drafts/{did}/confirm").status_code == 303
+    r = admin_client.post("/listings/export", data={"draft_id": str(did)})
+    batch = r.headers["location"].split("batch=")[1]
+    rows = list(csv.reader(io.StringIO(admin_client.get(f"/exports/{batch}.csv").content.decode("utf-8-sig"))))[1:]
+    assert dict(zip(rows[0], rows[1]))["*Quantity"] == "2"
+    db.expire_all()
+    lst = mark_listed(db, db.get(User, users["admin"].id), db.get(ListingDraft, did), "123456789055")
+    db.commit()
+    assert lst.quantity == 2
+    lid = lst.id
+    # 出品分（2）を超える販売は記録できない
+    r = admin_client.post(f"/listings/{lid}/sale", data={"buyer": "b", "amount": "30", "ship_country": "US",
+                                                         "quantity": "3", "paid": "1"})
+    db.expire_all()
+    assert db.get(Item, iid).quantity_sold == 0
+    admin_client.post(f"/listings/{lid}/sale", data={"buyer": "b", "amount": "20", "ship_country": "US",
+                                                     "quantity": "2", "paid": "1"})
+    db.expire_all()
+    it = db.get(Item, iid)
+    assert it.remaining == 1 and it.status == "PRICED" and db.get(Listing, lid).status == "sold"
+    # 残り1点はそのまま再出品できる（価格は承認済みのまま）
+    r = admin_client.post("/listings/generate", data={"item_id": str(iid)})
+    did2 = int(r.headers["location"].rsplit("/", 1)[1])
+    db.expire_all()
+    assert db.get(ListingDraft, did2).quantity == 1
