@@ -11,6 +11,10 @@
   <label style="color:var(--fg)"><input type="checkbox" name="show_pp" value="1" {% if show_pp %}checked{% endif %}> 仕入値を登録者以外のLv1にも表示する</label>
   <label style="color:var(--fg)"><input type="checkbox" name="remove_bg" value="1" {% if remove_bg %}checked{% endif %}> 撮影した写真の背景を自動で除去する（オフなら撮った写真をそのまま使う。向きの補正と縮小のみ）</label>
   <div class="row">
+    <div><label>発送までの営業日数（入金確認から）</label><input type="number" name="ship_business_days" value="{{ ship_days }}" min="1" max="10">
+      <div class="small muted">全区分の説明文の「◯ business days」と、ツールの発送期限に使います。eBay の配送ポリシーの Handling time も同じ日数にしてください。</div></div>
+  </div>
+  <div class="row">
     <div><label>発送期限当日の通知（時・JST）</label><input type="number" name="ship_due_notify_hour_jst" value="{{ ship_due_hours[0] }}" min="0" max="23"></div>
     <div><label>未発送ならLv2へ（時・JST）</label><input type="number" name="ship_due_escalate_hour_jst" value="{{ ship_due_hours[1] }}" min="0" max="23"></div>
     <div><label>eBayアダプタ</label><select name="ebay_adapter"><option value="manual" selected>manual（CSV・手動記録）</option><option value="api" disabled>api（Phase 3）</option></select></div>
@@ -66,7 +70,7 @@
 <div id="templates">
 <h2>出品テンプレート（区分ごと）</h2>
 <p class="small muted">Jinja2 形式。使える変数：sku, cert_number, model_id, card_name_jp, card_name_en, set_id, set_name, card_number,
-grader, grader_full, grade, population, condition_label, condition_short, quantity, memo</p>
+grader, grader_full, grade, population, condition_label, condition_short, quantity, memo, handling_days（発送までの営業日数。上の「基本」で設定）</p>
 <div class="tabs">{% for c in Category.ALL %}<a class="tab" href="#tpl-{{ c }}">{{ Category.LABELS[c] }}</a>{% endfor %}</div>
 {% for cat, parts in templates.items() %}
 <div id="tpl-{{ cat }}">

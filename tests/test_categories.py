@@ -595,3 +595,48 @@ def test_pack_uses_us_eu_shipping(db):
     d = get_setting(db, "listing_defaults")
     assert listing_svc.shipping_profile_for(d, "pack") == "Torelis Single US + EU"
     assert listing_svc.shipping_profile_for(d, "box") == "Torelis Free Express (DDP)"
+
+
+def test_handling_days_setting_drives_all_descriptions(admin_client, db, env, users):
+    """「発送までの営業日数」を1か所で変えると、全区分の説明文と発送期限に反映される。"""
+    from app.models import Item
+    from app.services import listing as listing_svc
+    from app.settings_store import get_setting
+    page = admin_client.get("/settings").text
+    assert 'name="ship_business_days"' in page
+    r = admin_client.post("/settings/general", data={"ship_business_days": "3", "ship_due_notify_hour_jst": "9",
+                                                     "ship_due_escalate_hour_jst": "12", "ebay_adapter": "manual"})
+    assert r.status_code == 303
+    db.expire_all()
+    assert get_setting(db, "ship_business_days") == 3
+    assert get_setting(db, "listing_defaults")["dispatch_time_max"] == 3
+    for cat in ("psa", "single", "pack", "box", "bulk"):
+        it = Item(category=cat, sku=f"H-{cat}", cert_number="7" * 8 if cat == "psa" else None, card_name_en="X",
+                  set_name="S", condition="nm" if cat == "single" else None)
+        db.add(it)
+        db.flush()
+        desc = listing_svc.render(db, it)[1]
+        assert "within 3 business days of cleared payment" in desc and "2 business days" not in desc, cat
+    db.rollback()
+
+
+def test_migration_keeps_custom_handling_days(env):
+    """テンプレートを「within 3 business days」に編集していたら、移行後は設定が 3 になり、文は変数になる。"""
+    import sqlite3
+    from alembic import command
+    from alembic.config import Config
+    from app.config import get_config
+    path = get_config().db_path
+    cfg = Config("alembic.ini")
+    command.downgrade(cfg, "0013")
+    con = sqlite3.connect(path)
+    con.execute("INSERT OR REPLACE INTO templates (key, body, version, updated_at) VALUES "
+                "('pack.description', 'ship within 3 business days now', 2, CURRENT_TIMESTAMP)")
+    con.commit()
+    con.close()
+    command.upgrade(cfg, "head")
+    con = sqlite3.connect(path)
+    body = con.execute("SELECT body FROM templates WHERE key='pack.description'").fetchone()[0]
+    val = con.execute("SELECT value FROM settings WHERE key='ship_business_days'").fetchone()[0]
+    con.close()
+    assert body == "ship within {{ handling_days }} business days now" and str(val) == "3"

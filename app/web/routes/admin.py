@@ -86,6 +86,7 @@ def settings_page(request: Request, user: User = Depends(require_lv2), db: Sessi
         "listing_weekdays": get_setting(db, "listing_weekdays"), "duty_on_holiday": get_setting(db, "duty_on_holiday"),
         "show_pp": get_setting(db, "show_purchase_price_to_lv1"), "adapter": get_setting(db, "ebay_adapter"),
         "remove_bg": get_setting(db, "remove_background"),
+        "ship_days": get_setting(db, "ship_business_days"),
         "templates": templates, "Category": Category,
         "catalog_url": get_setting(db, "card_catalog_url"),
         "catalog_stats": db.execute(select(func.count(CardCatalog.model_id), func.count(func.distinct(CardCatalog.set_id)),
@@ -131,6 +132,19 @@ async def settings_general(request: Request, user: User = Depends(require_lv2), 
     _save(db, user, "remove_background", form.get("remove_bg") == "1")
     _save(db, user, "ship_due_notify_hour_jst", int(form.get("ship_due_notify_hour_jst") or 9))
     _save(db, user, "ship_due_escalate_hour_jst", int(form.get("ship_due_escalate_hour_jst") or 12))
+    days = form.get("ship_business_days")
+    if days:
+        try:
+            days = int(days)
+        except ValueError:
+            raise ServiceError("発送までの営業日数は数字で入力してください")
+        if not 1 <= days <= 10:
+            raise ServiceError("発送までの営業日数は1〜10日で入力してください")
+        _save(db, user, "ship_business_days", days)
+        ld = dict(get_setting(db, "listing_defaults") or {})
+        if ld.get("dispatch_time_max") != days:
+            ld["dispatch_time_max"] = days
+            _save(db, user, "listing_defaults", ld)
     adapter = form.get("ebay_adapter") or "manual"
     if adapter != "manual":
         raise ServiceError("api アダプタは Phase 3 で利用可能になります")

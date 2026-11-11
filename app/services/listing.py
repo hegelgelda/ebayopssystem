@@ -25,7 +25,7 @@ PART_LABELS = {"title": "タイトル（80文字以内に切り詰め）", "desc
 # 返品の最後の一文（eBay Money Back Guarantee）と、48時間ルールを「お願い」にとどめる書き方は変えないこと。
 _SHIPPING_EXPRESS = """<h3>Shipping</h3>
 <ul>
-  <li>All items ship from Japan within 2 business days of cleared payment.</li>
+  <li>All items ship from Japan within {{ handling_days }} business days of cleared payment.</li>
   <li>We ship exclusively via FedEx or DHL Express. <b>A tracking number is provided for every order</b> and uploaded to eBay as soon as your item ships, so you can follow your package all the way to your door. Typical delivery is 3&ndash;7 business days after dispatch.</li>
   <li>Shipping is FREE to all supported destinations.</li>
   <li><b>Import duties and taxes are included (DDP).</b> You will not be charged anything on delivery.</li>
@@ -38,7 +38,7 @@ _SHIPPING_EXPRESS = """<h3>Shipping</h3>
 # シングル：欧州（エコノミー無料・スタンダード$5・SpeedPAK Express $23）と米国（エコノミー$10・SpeedPAK Express $32）
 _SHIPPING_SINGLE_EU = """<h3>Shipping</h3>
 <ul>
-  <li>All items ship from Japan within 2 business days of cleared payment.</li>
+  <li>All items ship from Japan within {{ handling_days }} business days of cleared payment.</li>
   <li>We ship to the <b>United States</b> and <b>Europe</b>. Choose your shipping service at checkout:
     <ul>
       <li><b>Europe:</b> Economy International Shipping &ndash; <b>FREE</b> / Standard International Shipping &ndash; US $5.00 / eBay SpeedPAK Express &ndash; US $23.00 (US $5.00 for each additional item)</li>
@@ -63,7 +63,7 @@ _RETURNS_PAYMENT = """<h3>Returns</h3>
 <ul>
   <li>Immediate payment is required for Buy It Now purchases.</li>
   <li>All payments are processed securely through eBay.</li>
-  <li>Orders ship within 2 business days after payment is confirmed{% if category in ('single', 'pack') %}. For tracked services, the tracking number is uploaded to eBay at dispatch{% else %}, and your tracking number will be uploaded to eBay at dispatch{% endif %}.</li>
+  <li>Orders ship within {{ handling_days }} business days after payment is confirmed{% if category in ('single', 'pack') %}. For tracked services, the tracking number is uploaded to eBay at dispatch{% else %}, and your tracking number will be uploaded to eBay at dispatch{% endif %}.</li>
 </ul>
 </div>"""
 
@@ -222,6 +222,8 @@ def raw_condition(db: Session, key: str | None) -> dict[str, str]:
 def context_for(db: Session, item: Item, quantity: int | None = None) -> dict[str, Any]:
     cond = raw_condition(db, item.condition)
     return {
+        # 発送までの営業日数（設定の「発送までの営業日数」。説明文・発送期限・eBayのハンドリングタイムで共通）
+        "handling_days": int(get_setting(db, "ship_business_days") or 2),
         "category": item.category, "sku": item.sku, "cert_number": item.cert_number or "",
         "model_id": item.model_id or "", "card_name_jp": item.card_name_jp or "",
         "card_name_en": item.card_name_en or "", "set_id": item.set_id or "", "set_name": item.set_name or "",
