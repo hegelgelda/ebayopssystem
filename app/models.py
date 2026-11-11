@@ -44,8 +44,8 @@ class Category:
     LABELS = {PSA: "PSA鑑定品", SINGLE: "シングル", PACK: "パック", BOX: "BOX", BULK: "バルク"}
     SKU_PREFIX = {SINGLE: "S", PACK: "P", BOX: "X", BULK: "L"}
     # 撮影で必須の写真。バルクは全体写真1枚
-    REQUIRED_PHOTOS = {PSA: ["front", "back"], SINGLE: ["front", "back"], PACK: ["front", "back"],
-                       BOX: ["front", "back"], BULK: ["front"]}
+    # 裏面は任意（全区分で表だけ撮れば価格承認に進める）
+    REQUIRED_PHOTOS = {PSA: ["front"], SINGLE: ["front"], PACK: ["front"], BOX: ["front"], BULK: ["front"]}
     PHOTO_LABELS = {BULK: {"front": "全体（必須）", "back": "裏・詳細（任意）"}}
 
 
@@ -186,7 +186,7 @@ class Item(Base):
         return ListingFormat.LABELS.get(self.listing_format, self.listing_format)
 
     def required_photos(self) -> list[str]:
-        return Category.REQUIRED_PHOTOS.get(self.category, ["front", "back"])
+        return Category.REQUIRED_PHOTOS.get(self.category, ["front"])
 
     def active_photos(self) -> list["Photo"]:
         return [p for p in self.photos if p.replaced_by_photo_id is None]

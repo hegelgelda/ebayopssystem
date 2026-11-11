@@ -260,6 +260,15 @@ def photo_queue(request: Request, category: str = "", user: User = Depends(curre
                 db: Session = Depends(get_db)):
     def q(stmt):
         return stmt.where(Item.category == category) if category else stmt
+    # 裏面を任意にする前に登録した在庫：表が撮れていれば撮影済みに進める
+    from app import audit
+    moved = False
+    for it in db.scalars(select(Item).where(Item.status == IS.INTAKE)).all():
+        if it.photo("front"):
+            photo_svc.maybe_mark_photographed(db, it, audit.Actor.system())
+            moved = True
+    if moved:
+        db.commit()
     intake = db.scalars(q(select(Item).where(Item.status == IS.INTAKE)).order_by(Item.id)).all()
     retake = db.scalars(q(select(Item).where(Item.status.in_([IS.PHOTOGRAPHED, IS.PRICED, IS.READY])))
                         .order_by(Item.id.desc()).limit(50)).all()
@@ -285,7 +294,7 @@ def photo_shoot(item_id: int, request: Request, user: User = Depends(current_use
     same = select(Item).where(Item.status == IS.INTAKE, Item.id != item.id, Item.category == item.category)
     nxt = db.scalar(same.where(Item.id > item.id).order_by(Item.id).limit(1)) or db.scalar(
         same.order_by(Item.id).limit(1))
-    labels = {"front": "表（必須）", "back": "裏（必須）", **Category.PHOTO_LABELS.get(item.category, {})}
+    labels = {"front": "表（必須）", "back": "裏（任意）", **Category.PHOTO_LABELS.get(item.category, {})}
     slots = [(k, labels[k], k in item.required_photos()) for k in ("front", "back")]
     return render(request, "photo_shoot.html", {"user": user, "item": item, "next_item": nxt, "slots": slots})
 

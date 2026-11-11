@@ -393,3 +393,44 @@ def test_draft_preview_shows_photos_in_order(admin_client, db, users):
     draft_id = ready_item(admin_client, item_id, start="50")
     page = admin_client.get(f"/drafts/{draft_id}").text
     assert "1枚目＝メイン" in page and 'title="1. 表"' in page and 'title="2. 裏"' in page and 'id="lightbox"' in page
+
+
+def test_back_photo_is_optional(admin_client, db, env, users):
+    """裏面は任意：表だけで撮影済みになり、写真1枚のCSVまで出せる。"""
+    from app.models import Item
+    r = intake(admin_client, category="single", model_id="SV2a-025", card_name_en="Pikachu", condition="nm")
+    item_id = done_id(r)
+    page = admin_client.get(f"/photos/{item_id}").text
+    assert "裏（任意）" in page and "裏（必須）" not in page
+    upload(admin_client, item_id, "front", n=1)
+    run_jobs()
+    db.expire_all()
+    assert db.get(Item, item_id).status == "PHOTOGRAPHED"
+    admin_client.post(f"/pricing/{item_id}/approve", data={"start": "20"})
+    r = admin_client.post("/listings/generate", data={"item_id": str(item_id)})
+    draft_id = int(r.headers["location"].rsplit("/", 1)[1])
+    assert admin_client.post(f"/drafts/{draft_id}/confirm").status_code == 303
+    r = admin_client.post("/listings/export", data={"draft_id": str(draft_id)})
+    batch = r.headers["location"].split("batch=")[1]
+    rows = list(csv.reader(io.StringIO(admin_client.get(f"/exports/{batch}.csv").content.decode("utf-8-sig"))))[1:]
+    pic = dict(zip(rows[0], rows[1]))["PicURL"]
+    assert pic and "|" not in pic
+
+
+def test_intake_items_waiting_for_back_are_moved_on(admin_client, db, env, users):
+    """裏面必須だった頃に表だけ撮った在庫は、撮影一覧を開くと撮影済みに進む。"""
+    from app.models import Item
+    from app.services import photos
+    r = intake(admin_client, category="single", model_id="SV2a-025", card_name_en="Pikachu", condition="nm")
+    item_id = done_id(r)
+    orig = photos.maybe_mark_photographed
+    photos.maybe_mark_photographed = lambda *a, **k: None  # 旧ルール相当：表だけでは進まない
+    try:
+        upload(admin_client, item_id, "front", n=2)
+    finally:
+        photos.maybe_mark_photographed = orig
+    db.expire_all()
+    assert db.get(Item, item_id).status == "INTAKE"
+    assert admin_client.get("/photos").status_code == 200
+    db.expire_all()
+    assert db.get(Item, item_id).status == "PHOTOGRAPHED"
