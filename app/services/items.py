@@ -326,3 +326,63 @@ def stale_items(db: Session) -> list[tuple[Item, int]]:
             out.append((it, (now - it.status_changed_at).days))
     out.sort(key=lambda x: -x[1])
     return out
+
+
+def delete_item(db: Session, user: User, item: Item, version: int | None) -> dict:
+    """在庫を削除する（Lv2）。出品・注文の履歴がある在庫は消さない（取り下げを使う）。
+
+    写真ファイル・価格案・出品下書き・コメント・通知も消す。操作ログには削除前の内容を残す。
+    """
+    from app.config import get_config
+    from app.models import Comment, Job, ListingDraft, Notification, Order, Photo, PriceQuote
+    if user.level < 2:
+        raise PermissionDenied("在庫の削除はLv2のみ可能です")
+    check_version(item, version)
+    if db.scalar(select(Listing.id).where(Listing.item_id == item.id).limit(1)) or \
+            db.scalar(select(Order.id).where(Order.item_id == item.id).limit(1)):
+        raise ServiceError("eBayに出品した・注文がある在庫は、履歴を残すため削除できません。「取り下げ」を使ってください")
+    cfg = get_config()
+    photos = list(db.scalars(select(Photo).where(Photo.item_id == item.id)))
+    snapshot = {k: getattr(item, k) for k in ("sku", "category", "cert_number", "model_id", "card_name_jp",
+                                              "card_name_en", "set_name", "status", "quantity",
+                                              "purchase_price_jpy", "storage_box", "storage_slot")}
+    snapshot["photos"] = len(photos)
+    files = []
+    for p in photos:
+        if p.original_path:
+            files.append(cfg.images_dir / p.original_path)
+        for rel in (p.processed_path, p.webp_path):
+            if rel:
+                files.append(cfg.public_images_dir / rel)
+    photo_ids = {p.id for p in photos}
+    for j in db.scalars(select(Job).where(Job.kind == "process_photo")):
+        if (j.payload or {}).get("photo_id") in photo_ids:
+            db.delete(j)
+    for p in photos:
+        p.replaced_by_photo_id = None
+    db.flush()
+    for model in (ListingDraft, PriceQuote, Photo):
+        for row in db.scalars(select(model).where(model.item_id == item.id)):
+            db.delete(row)
+    db.flush()
+    for row in db.scalars(select(Comment).where(Comment.target_type == "item", Comment.target_id == item.id)):
+        db.delete(row)
+    for row in db.scalars(select(Notification).where(Notification.target_type == "item",
+                                                     Notification.target_id == item.id)):
+        db.delete(row)
+    audit.log(db, audit.Actor.user(user), "item", item.id, "item.delete", before=snapshot)
+    db.delete(item)
+    db.flush()
+    # ファイルは DB の変更が通ってから消す（失敗しても在庫データには影響しない）
+    def _remove_files():
+        for f in files:
+            try:
+                f.unlink(missing_ok=True)
+            except OSError:
+                pass
+        for d in {f.parent for f in files}:
+            try:
+                d.rmdir()  # 空になったフォルダだけ消える
+            except OSError:
+                pass
+    return {"snapshot": snapshot, "remove_files": _remove_files}

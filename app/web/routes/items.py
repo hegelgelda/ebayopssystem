@@ -168,6 +168,21 @@ async def item_edit(item_id: int, request: Request, user: User = Depends(current
     return to(f"/items/{item.id}")
 
 
+@router.post("/items/{item_id}/delete")
+def item_delete(item_id: int, request: Request, version: str = Form(""), confirm: str = Form(""),
+                user: User = Depends(require_lv2), db: Session = Depends(get_db)):
+    """在庫の削除（Lv2・確認つき）。"""
+    item = item_svc.get_item(db, item_id)
+    if confirm != item.sku:
+        raise ServiceError("確認が取れなかったため削除していません")
+    label = f"{item.key_label} {item.display_name}"
+    res = item_svc.delete_item(db, user, item, form_int(version))
+    db.commit()
+    res["remove_files"]()
+    flash(request, f"🗑 削除しました：{label}")
+    return to("/items")
+
+
 @router.post("/items/{item_id}/withdraw")
 def item_withdraw(item_id: int, request: Request, reason: str = Form(""), version: str = Form(""),
                   user: User = Depends(require_lv2), db: Session = Depends(get_db)):

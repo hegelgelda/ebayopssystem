@@ -486,3 +486,53 @@ def test_photo_done_button(admin_client, db, env, users):
     upload(admin_client, b, "front", n=6)
     r = admin_client.post(f"/photos/{b}/done")
     assert r.headers["location"] == "/photos?category=single"  # 最後の1件は一覧へ
+
+
+def test_delete_item(admin_client, staff_client, db, env, users):
+    """在庫の削除：Lv2・確認つき。写真ファイルも消え、ID（SKU番号）は再利用しない。出品履歴があれば消せない。"""
+    import re
+    from app.config import get_config
+    from app.models import AuditLog, Item, Photo
+    a = done_id(intake(admin_client, category="single", model_id="SV2a-025", card_name_en="Pikachu", condition="nm",
+                       purchase_price_jpy="777"))
+    upload(admin_client, a, "front", n=11)
+    run_jobs()
+    db.expire_all()
+    it = db.get(Item, a)
+    files = [get_config().images_dir / p.original_path for p in it.photos] + \
+        [get_config().public_images_dir / p.processed_path for p in it.photos]
+    assert all(f.exists() for f in files)
+    page = admin_client.get(f"/items/{a}").text
+    assert "この在庫を削除" in page and "本当に削除しますか" in page
+    staff_page = staff_client.get(f"/items/{a}").text
+    assert "この在庫を削除" not in staff_page and "777" not in staff_page  # Lv1 には出さない（仕入値も漏らさない）
+    assert staff_client.post(f"/items/{a}/delete", data={"confirm": it.sku}).status_code in (303, 403)
+    db.expire_all()
+    assert db.get(Item, a) is not None
+    v = re.search(r'name="version" value="(\d+)"', page).group(1)
+    admin_client.post(f"/items/{a}/delete", data={"version": v, "confirm": ""})  # 確認なし → 消さない
+    db.expire_all()
+    assert db.get(Item, a) is not None
+    r = admin_client.post(f"/items/{a}/delete", data={"version": v, "confirm": it.sku})
+    assert r.headers["location"] == "/items"
+    db.expire_all()
+    assert db.get(Item, a) is None and db.query(Photo).filter_by(item_id=a).count() == 0
+    assert not any(f.exists() for f in files)
+    log = db.query(AuditLog).filter_by(target_type="item", target_id=str(a), action="item.delete").one()
+    assert "Pikachu" in str(log.before_json)
+    # 一番新しい在庫を消しても、次の在庫は同じ番号にならない
+    b = done_id(intake(admin_client, category="single", model_id="SV2a-025", card_name_en="Pikachu", condition="nm"))
+    assert b > a
+
+    # 出品したことがある在庫は削除できない
+    draft_id = ready_item(admin_client, b, start="20")
+    from app.adapters.manual import mark_listed
+    from app.models import ListingDraft, User
+    mark_listed(db, db.get(User, users["admin"].id), db.get(ListingDraft, draft_id), "123456789077")
+    db.commit()
+    page = admin_client.get(f"/items/{b}").text
+    assert "この在庫を削除" not in page and "履歴を残すため削除できません" in page
+    v = re.search(r'name="version" value="(\d+)"', page).group(1)
+    admin_client.post(f"/items/{b}/delete", data={"version": v, "confirm": db.get(Item, b).sku})
+    db.expire_all()
+    assert db.get(Item, b) is not None

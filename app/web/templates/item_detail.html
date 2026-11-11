@@ -141,7 +141,7 @@
 </form>
 
 {% if user.level >= 2 %}
-<details class="card"><summary>Lv2 操作（状態の巻き戻し・取り下げ）</summary>
+<details class="card"><summary>Lv2 操作（状態の巻き戻し・取り下げ・削除）</summary>
   {% if item.status not in ('LISTED','SOLD','WITHDRAWN') %}
   <form method="post" action="/items/{{ item.id }}/rollback" class="row">
     {{ version_field(item) }}
@@ -157,6 +157,18 @@
     <div><button class="danger">取り下げ</button></div>
   </form>
   {% else %}<p>取り下げ理由：{{ item.withdraw_reason }}</p>{% endif %}
+
+  <h3 style="margin-bottom:4px">在庫の削除</h3>
+  {% if listings or orders %}
+  <p class="small muted">eBayに出品した・注文がある在庫は、履歴を残すため削除できません。上の「取り下げ」を使ってください。</p>
+  {% else %}
+  <p class="small muted">登録の間違いなどで在庫そのものを消します。写真・価格・出品下書きも消え、<b>元に戻せません</b>（操作ログには削除前の内容が残ります）。</p>
+  <form method="post" action="/items/{{ item.id }}/delete" id="delete-form">
+    {{ version_field(item) }}
+    <input type="hidden" name="confirm" value="">
+    <button class="danger" type="submit">🗑 この在庫を削除</button>
+  </form>
+  {% endif %}
 </details>
 {% endif %}
 
@@ -169,4 +181,23 @@
 
 <h2>操作履歴</h2>
 {% include "partials/log_table.html" %}
+{% endblock %}
+
+{% block scripts %}
+{% if user.level >= 2 and not (listings or orders) %}
+<script>
+(function () {
+  const f = document.getElementById('delete-form'); if (!f) return;
+  f.addEventListener('submit', (e) => {
+    const msg = '本当に削除しますか？元に戻せません。\n\n'
+      + {{ (item.key_label ~ ' ' ~ (item.display_name or ''))|tojson }} + '\n'
+      + '状態：' + {{ ITEM_LABELS[item.status]|tojson }} + ' ・ 写真 {{ item.active_photos()|length }}枚'
+      + {{ ((' ・ 仕入値 ' ~ item.purchase_price_jpy ~ '円') if item.purchase_price_jpy else '')|tojson }}
+      + '\n\n写真・価格・出品下書きも一緒に消えます。';
+    if (!confirm(msg)) { e.preventDefault(); return; }
+    f.querySelector('[name=confirm]').value = {{ item.sku|tojson }};
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

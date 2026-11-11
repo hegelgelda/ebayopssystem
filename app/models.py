@@ -124,6 +124,8 @@ def _default_sku(ctx) -> str:
 
 class Item(Base):
     __tablename__ = "items"
+    # 削除した在庫のIDを再利用しない（SKU は ID から作るので、番号の使い回し・履歴の混同を防ぐ）
+    __table_args__ = {"sqlite_autoincrement": True}
     id: Mapped[int] = mapped_column(primary_key=True)
     category: Mapped[str] = mapped_column(String(8), default=Category.PSA, index=True)
     sku: Mapped[str] = mapped_column(String(32), unique=True, default=_default_sku)  # PSA は cert 番号と同じ
