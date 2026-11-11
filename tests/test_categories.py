@@ -560,7 +560,7 @@ def test_single_eu_economy_shipping(admin_client, db, env, users):
     r = admin_client.post("/listings/export", data={"draft_id": str(d1)})
     batch = r.headers["location"].split("batch=")[1]
     rows = list(csv.reader(io.StringIO(admin_client.get(f"/exports/{batch}.csv").content.decode("utf-8-sig"))))[1:]
-    assert dict(zip(rows[0], rows[1]))["ShippingProfileName"] == "Torelis Single US+EU"
+    assert dict(zip(rows[0], rows[1]))["ShippingProfileName"] == "Torelis Single US + EU"
     from app.settings_store import get_setting
     assert listing_svc.shipping_profile_for(get_setting(db, "listing_defaults"), "psa") == "Torelis Free Express (DDP)"
 
