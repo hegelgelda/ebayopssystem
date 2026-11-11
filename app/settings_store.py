@@ -75,8 +75,9 @@ DEFAULTS: dict[str, Any] = {
         "condition_id": "2750",
         "duration_days": 7,
         "shipping_profile": "Torelis Free Express (DDP)",
-        # 区分ごとの配送ポリシー名（無ければ shipping_profile）。シングル・パックは米国・欧州向け（エコノミー＋SpeedPAK）
-        "shipping_profile_by_category": {"single": "Torelis Single US + EU", "pack": "Torelis Single US + EU"},
+        # 区分ごとの配送ポリシー名（無ければ shipping_profile）。シングル・パック・バルクは米国・欧州向け（エコノミー＋SpeedPAK）
+        "shipping_profile_by_category": {"single": "Torelis Single US + EU", "pack": "Torelis Single US + EU",
+                                         "bulk": "Torelis Single US + EU"},
         "payment_profile": "Immediate Payment",
         "return_profile": "No Returns",
         "location": "Tokyo",

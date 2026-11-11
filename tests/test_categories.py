@@ -595,6 +595,13 @@ def test_pack_uses_us_eu_shipping(db):
     d = get_setting(db, "listing_defaults")
     assert listing_svc.shipping_profile_for(d, "pack") == "Torelis Single US + EU"
     assert listing_svc.shipping_profile_for(d, "box") == "Torelis Free Express (DDP)"
+    assert listing_svc.shipping_profile_for(d, "bulk") == "Torelis Single US + EU"
+    bulk = Item(category="bulk", sku="L-T1", card_name_en="Japanese AR Lot", rarity="AR", card_count=20)
+    db.add(bulk)
+    db.flush()
+    bdesc = listing_svc.render(db, bulk)[1]
+    assert "Economy Shipping from outside US &ndash; US $10.00" in bdesc and "FedEx or DHL" not in bdesc
+    assert "For tracked services" in bdesc
 
 
 def test_handling_days_setting_drives_all_descriptions(admin_client, db, env, users):
