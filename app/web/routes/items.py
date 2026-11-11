@@ -194,8 +194,12 @@ def item_format(item_id: int, request: Request, listing_format: str = Form(...),
     item = item_svc.get_item(db, item_id)
     item_svc.set_listing_format(db, user, item, listing_format, form_int(version))
     db.commit()
-    flash(request, f"出品形式を「{LF.LABELS[listing_format]}」に変更しました")
-    return back(request, f"/items/{item.id}")
+    if item.status in (IS.PHOTOGRAPHED, IS.PRICED):
+        flash(request, f"出品形式を「{LF.LABELS[listing_format]}」に変更しました。"
+                       f"「価格」から{LF.LABELS[listing_format]}の価格を承認してください")
+    else:
+        flash(request, f"出品形式を「{LF.LABELS[listing_format]}」に変更しました")
+    return to(f"/items/{item.id}#format")
 
 
 @router.post("/comments")

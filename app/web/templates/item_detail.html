@@ -6,12 +6,34 @@
 <p>{{ cat_badge(item) }} {{ fmt_badge(item.listing_format) }} {{ item.card_name_jp or '' }}{% if item.card_name_en %} / {{ item.card_name_en }}{% endif %}
   <span class="muted">{% if item.model_id %}({{ item.model_id }}){% endif %}{% if condition %} 状態 {{ condition.short }}{% endif %}
   {% if item.quantity > 1 %} ・ 数量 {{ item.quantity }}（販売済み {{ item.quantity_sold }} / 残り {{ item.remaining }}）{% endif %}</span></p>
-{% if item.status in ('INTAKE','PHOTOGRAPHED','PRICED','READY') %}
-<form method="post" action="/items/{{ item.id }}/format" class="inline">{{ version_field(item) }}
-  <input type="hidden" name="listing_format" value="{{ 'auction' if item.listing_format == 'fixed' else 'fixed' }}">
-  <button class="small" {% if item.listing_format == 'fixed' and item.remaining > 1 %}disabled title="数量が2以上なのでオークションにできません"{% endif %}
-    onclick="return confirm('出品形式を変更しますか？価格は新しい形式で承認し直します')">{{ 'オークション' if item.listing_format == 'fixed' else '通常出品' }}に移す</button>
-</form>
+{% set can_switch = item.status in ('INTAKE','PHOTOGRAPHED','PRICED','READY') %}
+{% if item.status not in ('SOLD','WITHDRAWN') %}
+<div class="card fmt-card" id="format">
+  <div class="fmt-head"><b>出品形式</b>
+    <span class="small muted">{% if can_switch %}押すと切り替わります{% elif item.status == 'LISTED' %}出品中は変更できません{% endif %}</span></div>
+  <div class="fmt-switch">
+    {% for f, label, sub in [('fixed', '通常出品', '固定価格・在庫がなくなるまで'), ('auction', 'オークション', '1点・期間を決めて入札')] %}
+    {% set current = item.listing_format == f %}
+    {% set blocked = (f == 'auction' and item.remaining > 1) %}
+    <form method="post" action="/items/{{ item.id }}/format">{{ version_field(item) }}
+      <input type="hidden" name="listing_format" value="{{ f }}">
+      <button class="fmt-opt lane-{{ f }} {% if current %}active{% endif %}"
+        {% if current or not can_switch or blocked %}disabled{% endif %}
+        {% if not current %}onclick="return confirm('{{ label }}に切り替えますか？\n{% if item.status in ('PRICED','READY') %}承認済みの価格と出品プレビューは{{ label }}用に作り直します（価格承認からやり直し）。{% else %}価格は{{ label }}として承認します。{% endif %}')"{% endif %}>
+        <span class="fmt-label">{% if current %}✓ {% endif %}{{ label }}</span>
+        <span class="fmt-sub">{{ sub }}</span>
+      </button>
+    </form>
+    {% endfor %}
+  </div>
+  {% if can_switch and item.listing_format == 'fixed' and item.remaining > 1 %}
+  <p class="small muted" style="margin:8px 0 0">数量が2以上（残り {{ item.remaining }}）なのでオークションにはできません。オークションは1点ずつ出品します（数量を1にすると切り替えられます）。</p>
+  {% elif item.status == 'LISTED' %}
+  <p class="small muted" style="margin:8px 0 0">変えたいときは、eBayで出品を終了 → 下の「{{ '不落札を記録' if item.listing_format == 'auction' else '出品終了を記録' }}」で価格確定に戻してから切り替えてください。</p>
+  {% elif item.status in ('PRICED','READY') %}
+  <p class="small muted" style="margin:8px 0 0">切り替えると、承認済みの価格と出品プレビューは新しい形式で作り直します（価格承認からやり直し）。</p>
+  {% endif %}
+</div>
 {% endif %}
 
 <div class="actions">

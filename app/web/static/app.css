@@ -155,3 +155,17 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
 /* 価格承認：PCは在庫（左）＋参考値（右）、スマホは縦に並べる */
 .pricing-grid { grid-template-columns: minmax(260px, 1fr) minmax(320px, 2fr); }
 @media (max-width: 760px) { .pricing-grid { grid-template-columns: 1fr; } .pricing-grid > * { min-width: 0; } }
+
+/* 在庫詳細：出品形式の切り替え */
+.fmt-card .fmt-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.fmt-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fmt-switch form { margin: 0; }
+.fmt-opt { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 8px; border-width: 2px; }
+.fmt-opt .fmt-label { font-size: 16px; font-weight: 700; }
+.fmt-opt .fmt-sub { font-size: 12px; opacity: .8; }
+.fmt-opt.lane-fixed.active { background: #157347; border-color: #157347; color: #fff; opacity: 1; }
+.fmt-opt.lane-auction.active { background: #8a3ffc; border-color: #8a3ffc; color: #fff; opacity: 1; }
+.fmt-opt.lane-fixed:not(:disabled):hover { border-color: #157347; }
+.fmt-opt.lane-auction:not(:disabled):hover { border-color: #8a3ffc; }
+.fmt-opt:disabled:not(.active) { opacity: .45; cursor: not-allowed; }
+.fmt-card { max-width: 560px; scroll-margin-top: 90px; }

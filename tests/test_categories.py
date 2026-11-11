@@ -434,3 +434,33 @@ def test_intake_items_waiting_for_back_are_moved_on(admin_client, db, env, users
     assert admin_client.get("/photos").status_code == 200
     db.expire_all()
     assert db.get(Item, item_id).status == "PHOTOGRAPHED"
+
+
+def test_format_switch_on_item_detail(admin_client, db, env, users):
+    """在庫詳細の出品形式カード：切り替え・数量2以上の制限・出品中は不可。"""
+    import re
+    from app.models import Item
+    r = intake(admin_client, category="single", model_id="SV2a-025", card_name_en="Pikachu", condition="nm",
+               quantity="1", listing_format="fixed")
+    item_id = done_id(r)
+    page = admin_client.get(f"/items/{item_id}").text
+    assert 'id="format"' in page and "✓ 通常出品" in page
+    v = re.search(r'name="version" value="(\d+)"', page).group(1)
+    r = admin_client.post(f"/items/{item_id}/format", data={"listing_format": "auction", "version": v})
+    assert r.headers["location"] == f"/items/{item_id}#format"
+    db.expire_all()
+    assert db.get(Item, item_id).listing_format == "auction"
+    assert "✓ オークション" in admin_client.get(f"/items/{item_id}").text
+
+    r = intake(admin_client, category="single", model_id="SV2a-025", card_name_en="Pikachu", condition="nm",
+               quantity="3", listing_format="fixed")
+    multi = admin_client.get(f"/items/{done_id(r)}").text
+    assert "オークションにはできません" in multi
+
+    draft_id = ready_item(admin_client, item_id, start="20", bin="40")
+    from app.adapters.manual import mark_listed
+    from app.models import ListingDraft, User
+    mark_listed(db, db.get(User, users["admin"].id), db.get(ListingDraft, draft_id), "123456789099")
+    db.commit()
+    listed = admin_client.get(f"/items/{item_id}").text
+    assert "出品中は変更できません" in listed and "不落札を記録" in listed
