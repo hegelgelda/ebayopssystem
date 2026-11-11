@@ -137,7 +137,8 @@ def draft_preview(draft_id: int, request: Request, user: User = Depends(current_
     item = item_svc.get_item(db, d.item_id)
     photos = sorted(item.active_photos(), key=lambda p: p.seq)
     return render(request, "draft_preview.html", {"user": user, "d": d, "item": item, "photos": photos,
-                                                  "images": listing_svc.image_urls(item)})
+                                                  "images": listing_svc.image_urls(item),
+                                                  "spec_editable": listing_svc.SPEC_EDITABLE})
 
 
 @router.post("/drafts/{draft_id}/edit")
@@ -151,6 +152,21 @@ def draft_edit(draft_id: int, request: Request, title: str = Form(""), duration_
     db.commit()
     flash(request, "保存しました")
     return to(f"/drafts/{d.id}")
+
+
+@router.post("/drafts/{draft_id}/specifics")
+async def draft_specifics(draft_id: int, request: Request, user: User = Depends(current_user),
+                          db: Session = Depends(get_db)):
+    """Item Specifics の編集（パック・バルク）。"""
+    d = db.get(ListingDraft, draft_id)
+    if not d:
+        raise NotFound("下書きが見つかりません")
+    form = await request.form()
+    pairs = list(zip(form.getlist("spec_key"), form.getlist("spec_val")))
+    listing_svc.update_draft_specifics(db, user, d, pairs)
+    db.commit()
+    flash(request, "Item Specifics を保存しました")
+    return to(f"/drafts/{d.id}#specifics")
 
 
 @router.post("/drafts/{draft_id}/confirm")

@@ -687,3 +687,72 @@ def test_draft_quantity_edit_and_listing_sell_out(admin_client, db, env, users):
     did2 = int(r.headers["location"].rsplit("/", 1)[1])
     db.expire_all()
     assert db.get(ListingDraft, did2).quantity == 1
+
+
+def test_pack_item_specifics_editable(admin_client, db, env, users):
+    """パックだけ、出品プレビューで Item Specifics を編集できる（追加・変更・削除）。Game・Set は必須。"""
+    from app.models import ListingDraft
+    pid = done_id(intake(admin_client, category="pack", set_id="SV2a", set_name="Pokemon Card 151",
+                         card_name_en="Pokemon Card 151", quantity="1", listing_format="fixed"))
+    upload(admin_client, pid, "front", n=41)
+    run_jobs()
+    admin_client.post(f"/pricing/{pid}/approve", data={"start": "15"})
+    r = admin_client.post("/listings/generate", data={"item_id": str(pid)})
+    did = int(r.headers["location"].rsplit("/", 1)[1])
+    page = admin_client.get(f"/drafts/{did}").text
+    assert 'action="/drafts/%d/specifics"' % did in page and 'name="spec_key"' in page
+    specs = dict(db.get(ListingDraft, did).item_specifics_json)
+    pairs = [(k, v) for k, v in specs.items() if k != "Manufacturer"]  # Manufacturer を削除
+    pairs = [(k, "2023" if False else v) for k, v in pairs] + [("Year Manufactured", "2023"), ("", "")]
+    data = {"spec_key": [k for k, _ in pairs], "spec_val": [v for _, v in pairs]}
+    r = admin_client.post(f"/drafts/{did}/specifics", data=data)
+    assert r.headers["location"].endswith("#specifics")
+    db.expire_all()
+    new = db.get(ListingDraft, did).item_specifics_json
+    assert new["Year Manufactured"] == "2023" and "Manufacturer" not in new and new["Game"] == "Pokémon TCG"
+    # 必須（Set）を空にはできない・65文字超は不可
+    bad = {"spec_key": ["Game", "Set"], "spec_val": ["Pokémon TCG", ""]}
+    admin_client.post(f"/drafts/{did}/specifics", data=bad)
+    too_long = {"spec_key": ["Game", "Set", "Features"], "spec_val": ["Pokémon TCG", "151", "x" * 66]}
+    admin_client.post(f"/drafts/{did}/specifics", data=too_long)
+    db.expire_all()
+    assert db.get(ListingDraft, did).item_specifics_json == new
+    # CSV に反映
+    assert admin_client.post(f"/drafts/{did}/confirm").status_code == 303
+    r = admin_client.post("/listings/export", data={"draft_id": str(did)})
+    batch = r.headers["location"].split("batch=")[1]
+    rows = list(csv.reader(io.StringIO(admin_client.get(f"/exports/{batch}.csv").content.decode("utf-8-sig"))))[1:]
+    rec = dict(zip(rows[0], rows[1]))
+    assert rec["C:Year Manufactured"] == "2023" and "C:Manufacturer" not in rec and rec["*C:Set"]
+
+
+def test_specifics_not_editable_for_single(admin_client, db, env, users):
+    from app.models import ListingDraft
+    sid = done_id(intake(admin_client, category="single", model_id="SV2a-025", card_name_en="Pikachu", condition="nm"))
+    did = ready_item(admin_client, sid, start="10")
+    page = admin_client.get(f"/drafts/{did}").text
+    assert "/specifics" not in page
+    before = dict(db.get(ListingDraft, did).item_specifics_json)
+    admin_client.post(f"/drafts/{did}/specifics", data={"spec_key": ["Game", "Set"], "spec_val": ["A", "B"]})
+    db.expire_all()
+    assert db.get(ListingDraft, did).item_specifics_json == before
+
+
+def test_bulk_item_specifics_editable(admin_client, db, env, users):
+    """バルクも Item Specifics を編集できる。必須は Game だけ（Set は空でもよい）。"""
+    from app.models import ListingDraft
+    bid = done_id(intake(admin_client, category="bulk", card_name_en="Japanese AR Lot", rarity="AR",
+                         card_count="20", condition="nm", listing_format="auction"))
+    did = ready_item(admin_client, bid, start="20")
+    r = admin_client.post("/listings/generate", data={"item_id": str(bid)})
+    did = int(r.headers["location"].rsplit("/", 1)[1])
+    page = admin_client.get(f"/drafts/{did}").text
+    assert f'action="/drafts/{did}/specifics"' in page
+    data = {"spec_key": ["Game", "Number of Cards", "Character"], "spec_val": ["Pokémon TCG", "25", "Pikachu"]}
+    admin_client.post(f"/drafts/{did}/specifics", data=data)
+    db.expire_all()
+    assert db.get(ListingDraft, did).item_specifics_json == {"Game": "Pokémon TCG", "Number of Cards": "25",
+                                                             "Character": "Pikachu"}
+    admin_client.post(f"/drafts/{did}/specifics", data={"spec_key": ["Game"], "spec_val": [""]})  # Game は必須
+    db.expire_all()
+    assert db.get(ListingDraft, did).item_specifics_json["Game"] == "Pokémon TCG"

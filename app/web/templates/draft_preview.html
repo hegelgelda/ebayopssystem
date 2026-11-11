@@ -57,9 +57,30 @@
         {% if d.status == 'draft' %}<div class="actions"><button>保存</button></div>{% endif %}
       </form>
     </div>
-    <div class="card">
+    <div class="card" id="specifics">
       <h2 style="margin-top:0">Item Specifics</h2>
+      {% set req = spec_editable.get(item.category) %}
+      {% if req is not none and d.status == 'draft' %}
+      <form method="post" action="/drafts/{{ d.id }}/specifics">
+        <div class="spec-rows">
+          {% for k, v in d.item_specifics_json.items() %}
+          <div class="spec-row">
+            <input type="text" name="spec_key" value="{{ k }}" maxlength="65" {% if k in req %}readonly title="eBayで必須の項目です"{% endif %}>
+            <input type="text" name="spec_val" value="{{ v }}" maxlength="65" {% if k in req %}required{% endif %}>
+            {% if k not in req %}<button type="button" class="small spec-del" title="この項目を削除">✕</button>{% else %}<span class="small muted">必須</span>{% endif %}
+          </div>
+          {% endfor %}
+          {% for _ in range(2) %}
+          <div class="spec-row"><input type="text" name="spec_key" placeholder="項目名（例：Year Manufactured）" maxlength="65"><input type="text" name="spec_val" placeholder="値（例：2026）" maxlength="65"><span></span></div>
+          {% endfor %}
+        </div>
+        <p class="small muted" style="margin:6px 0 0">値を空にすると、その項目は出品に入りません。項目名・値は65文字まで（eBayの上限）。</p>
+        <div class="actions"><button>Item Specifics を保存</button></div>
+      </form>
+      {% else %}
       <dl class="kv">{% for k, v in d.item_specifics_json.items() %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>
+      {% if req is not none %}<p class="small muted">確認済みのため編集できません（再生成すると編集できます）。</p>{% endif %}
+      {% endif %}
     </div>
   </div>
 </div>
@@ -87,6 +108,11 @@
 </div>
 {% endblock %}
 {% block scripts %}
+<script>
+document.querySelectorAll('.spec-del').forEach(b => b.addEventListener('click', () => {
+  const row = b.closest('.spec-row'); row.querySelectorAll('input').forEach(i => i.value = ''); row.hidden = true;
+}));
+</script>
 <script>
 (function () {
   // 写真の一覧はページ上のサムネイルから作る（本文のテンプレート変数はこのブロックから見えないため）

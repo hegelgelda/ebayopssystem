@@ -334,6 +334,44 @@ def update_draft(db: Session, user: User, draft: ListingDraft, data: dict[str, A
         audit.log(db, audit.Actor.user(user), "listing", draft.id, "draft.update", before=before, after=after)
 
 
+# Item Specifics を出品プレビューで編集できる区分と、その区分で空にできない項目
+SPEC_EDITABLE = {Category.PACK: ("Game", "Set"),  # パック：*C:Game / *C:Set
+                 Category.BULK: ("Game",)}  # バルク：複数の弾にまたがるまとめ売りは Set が空になる
+SPEC_MAX = 65  # eBay の Item Specifics は名前・値とも65文字まで
+
+
+def update_draft_specifics(db: Session, user: User, draft: ListingDraft, pairs: list[tuple[str, str]]) -> None:
+    """出品プレビューで Item Specifics を編集する（パック・バルク）。空の値は削除扱い。"""
+    if draft.status != "draft":
+        raise ServiceError("確認済みの下書きは編集できません（再生成してください）")
+    item = db.get(Item, draft.item_id)
+    assert item is not None
+    if item.category not in SPEC_EDITABLE:
+        raise ServiceError("Item Specifics を編集できるのはパックとバルクだけです")
+    required = SPEC_EDITABLE[item.category]
+    specs: dict[str, str] = {}
+    for k, v in pairs:
+        k, v = " ".join((k or "").split()), " ".join((v or "").split())
+        if not k and not v:
+            continue
+        if not k:
+            raise ServiceError(f"項目名が空です（値：{v}）")
+        if len(k) > SPEC_MAX or len(v) > SPEC_MAX:
+            raise ServiceError(f"項目名・値は{SPEC_MAX}文字以内にしてください（{k}）")
+        if k in specs:
+            raise ServiceError(f"項目「{k}」が重複しています")
+        if v:
+            specs[k] = v
+    missing = [k for k in required if not specs.get(k)]
+    if missing:
+        raise ServiceError("必須の項目が空です：" + "、".join(missing))
+    before = dict(draft.item_specifics_json or {})
+    if specs != before:
+        draft.item_specifics_json = specs
+        audit.log(db, audit.Actor.user(user), "listing", draft.id, "draft.specifics",
+                  before={"item_specifics": before}, after={"item_specifics": specs})
+
+
 def confirm_draft(db: Session, user: User, draft: ListingDraft, version: int | None) -> None:
     item = db.get(Item, draft.item_id)
     assert item is not None

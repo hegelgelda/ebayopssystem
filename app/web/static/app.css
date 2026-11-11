@@ -175,3 +175,9 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
   border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
 .done-bar button { min-width: 260px; }
 @media (max-width: 640px) { .done-bar button { width: 100%; } }
+
+/* 出品プレビュー：Item Specifics の編集（パック） */
+.spec-row { display: grid; grid-template-columns: 1fr 1.3fr 36px; gap: 6px; align-items: center; margin-bottom: 6px; }
+.spec-row input[readonly] { background: var(--bg); color: var(--muted); }
+@media (max-width: 640px) { .spec-row { grid-template-columns: 1fr 1fr 32px; } }
+#specifics { scroll-margin-top: 90px; }
