@@ -23,7 +23,7 @@ PART_LABELS = {"title": "タイトル（80文字以内に切り詰め）", "desc
 # ここ（C: 列）には入れない（eBay のテンプレートで、同名の項目は CD: 側を優先するよう指示されている）。
 # 配送・返品・支払の文面は「Torelis eBay Business Policies v1.1」の Buyer-facing text に合わせる。
 # 返品の最後の一文（eBay Money Back Guarantee）と、48時間ルールを「お願い」にとどめる書き方は変えないこと。
-_SHIPPING_RETURNS = """<h3>Shipping</h3>
+_SHIPPING_EXPRESS = """<h3>Shipping</h3>
 <ul>
   <li>All items ship from Japan within 2 business days of cleared payment.</li>
   <li>We ship exclusively via FedEx or DHL Express. <b>A tracking number is provided for every order</b> and uploaded to eBay as soon as your item ships, so you can follow your package all the way to your door. Typical delivery is 3&ndash;7 business days after dispatch.</li>
@@ -33,7 +33,27 @@ _SHIPPING_RETURNS = """<h3>Shipping</h3>
   <li>Each item is packed individually and securely. Combined shipping discounts are not available.</li>
   <li>Delivery times are estimates and may vary due to customs clearance or carrier delays.</li>
 </ul>
-<h3>Returns</h3>
+"""
+
+# シングル：エコノミー（無料）・スタンダード（$5）・SpeedPAK Express（$23）、発送先は欧州のみ
+_SHIPPING_SINGLE_EU = """<h3>Shipping</h3>
+<ul>
+  <li>All items ship from Japan within 2 business days of cleared payment.</li>
+  <li>Choose your shipping service at checkout:
+    <ul>
+      <li><b>Economy International Shipping &ndash; FREE.</b> Our most affordable option; please allow several weeks for delivery.</li>
+      <li><b>Standard International Shipping &ndash; US $5.00.</b> Faster delivery.</li>
+      <li><b>eBay SpeedPAK Express &ndash; US $23.00</b> (US $5.00 for each additional item). Our fastest option, fully tracked.</li>
+    </ul>
+    The estimated delivery date for each service is shown in the shipping section of this listing.</li>
+  <li><b>Import duties and taxes are included (DDP).</b> You will not be charged anything on delivery.</li>
+  <li>We currently ship to Europe only. Please see the shipping section for the list of countries.</li>
+  <li>We do not ship to PO Boxes. Please provide a full physical address and a valid phone number.</li>
+  <li>Delivery times are estimates and may vary due to customs clearance or postal delays.</li>
+</ul>
+"""
+
+_RETURNS_PAYMENT = """<h3>Returns</h3>
 <ul>
   <li>We do not accept returns for change of mind, including buyer's remorse or ordering mistakes.</li>
   {% if category in ('pack', 'box') %}<li><b>Sealed products:</b> Once the factory seal or shrink wrap is opened, we cannot guarantee contents, pull rates, or card condition, and opened items cannot be returned.</li>{% endif %}
@@ -44,9 +64,12 @@ _SHIPPING_RETURNS = """<h3>Shipping</h3>
 <ul>
   <li>Immediate payment is required for Buy It Now purchases.</li>
   <li>All payments are processed securely through eBay.</li>
-  <li>Orders ship within 2 business days after payment is confirmed, and your tracking number will be uploaded to eBay at dispatch.</li>
+  <li>Orders ship within 2 business days after payment is confirmed{% if category == 'single' %}. For tracked services, the tracking number is uploaded to eBay at dispatch{% else %}, and your tracking number will be uploaded to eBay at dispatch{% endif %}.</li>
 </ul>
 </div>"""
+
+_SHIPPING_RETURNS = _SHIPPING_EXPRESS + _RETURNS_PAYMENT
+_SHIPPING_RETURNS_SINGLE = _SHIPPING_SINGLE_EU + _RETURNS_PAYMENT
 
 
 def _specs(d: dict[str, str]) -> str:
@@ -85,7 +108,7 @@ DEFAULT_TEMPLATES: dict[str, dict[str, str]] = {
 </ul>
 <p>{% if quantity > 1 %}Photos show the actual card; you will receive a card in the same condition.{% else %}The item you will receive is the exact card shown in the photos.{% endif %}
 Shipped in a sleeve and top loader.</p>
-""" + _SHIPPING_RETURNS,
+""" + _SHIPPING_RETURNS_SINGLE,
         "item_specifics": _specs({
             "Game": "Pokémon TCG", "Card Name": "{{ card_name_en }}", "Set": "{{ set_name or set_id }}",
             "Card Number": "{{ card_number }}", "Language": "Japanese",
@@ -152,6 +175,12 @@ _env = SandboxedEnvironment(autoescape=False)
 
 def template_key(category: str, part: str) -> str:
     return f"{category}.{part}"
+
+
+def shipping_profile_for(defaults: dict, category: str) -> str:
+    """CSV の ShippingProfileName：区分ごとの指定があればそれ、無ければ共通の配送ポリシー名。"""
+    return ((defaults.get("shipping_profile_by_category") or {}).get(category)
+            or defaults.get("shipping_profile") or "")
 
 
 def get_template(db: Session, key: str) -> Template:

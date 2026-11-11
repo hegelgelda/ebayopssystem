@@ -48,6 +48,8 @@ DEFAULTS: dict[str, Any] = {
     "tracking_regex": {
         "FEDEX": r"^(\d{12}|\d{15}|\d{20}|\d{22})$",
         "DHL": r"^\d{10}$",
+        "JPPOST": r"^[A-Z]{2}\d{9}JP$",
+        "SPEEDPAK": r"^[A-Z0-9]{10,34}$",
     },
     # 価格ルール（F0-3）
     "price_rule": {
@@ -73,6 +75,8 @@ DEFAULTS: dict[str, Any] = {
         "condition_id": "2750",
         "duration_days": 7,
         "shipping_profile": "Torelis Free Express (DDP)",
+        # 区分ごとの配送ポリシー名（無ければ shipping_profile）。シングルは欧州向けエコノミー無料
+        "shipping_profile_by_category": {"single": "Torelis Single Economy Free (EU)"},
         "payment_profile": "Immediate Payment",
         "return_profile": "No Returns",
         "location": "Tokyo",

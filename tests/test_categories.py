@@ -536,3 +536,44 @@ def test_delete_item(admin_client, staff_client, db, env, users):
     admin_client.post(f"/items/{b}/delete", data={"version": v, "confirm": db.get(Item, b).sku})
     db.expire_all()
     assert db.get(Item, b) is not None
+
+
+def test_single_eu_economy_shipping(admin_client, db, env, users):
+    """シングル：説明文はエコノミー無料／スタンダード$5／SpeedPAK $23・欧州のみ、CSV の配送ポリシーはシングル用。"""
+    from app.models import Item
+    from app.services import listing as listing_svc
+    single = Item(category="single", sku="T-s1", model_id="SV2a-201", card_name_en="X", condition="nm")
+    psa = Item(category="psa", cert_number="66666666", sku="66666666", model_id="SV2a-201", card_name_en="X")
+    db.add_all([single, psa])
+    db.flush()
+    desc = listing_svc.render(db, single)[1]
+    assert "Economy International Shipping &ndash; FREE" in desc and "US $5.00" in desc and "US $23.00" in desc
+    assert "ship to Europe only" in desc and "FedEx or DHL" not in desc
+    assert "For tracked services" in desc
+    pdesc = listing_svc.render(db, psa)[1]
+    assert "FedEx or DHL" in pdesc and "Europe only" not in pdesc
+    db.rollback()  # 描画で作られたテンプレートは捨てる（アプリ側の書き込みと競合させない）
+    # CSV：シングルはシングル用の配送ポリシー、PSA は従来どおり
+    d1 = ready_item(admin_client, done_id(intake(admin_client, category="single", model_id="SV2a-025",
+                                                 card_name_en="Pikachu", condition="nm")), start="20")
+    r = admin_client.post("/listings/export", data={"draft_id": str(d1)})
+    batch = r.headers["location"].split("batch=")[1]
+    rows = list(csv.reader(io.StringIO(admin_client.get(f"/exports/{batch}.csv").content.decode("utf-8-sig"))))[1:]
+    assert dict(zip(rows[0], rows[1]))["ShippingProfileName"] == "Torelis Single Economy Free (EU)"
+    from app.settings_store import get_setting
+    assert listing_svc.shipping_profile_for(get_setting(db, "listing_defaults"), "psa") == "Torelis Free Express (DDP)"
+
+
+def test_tracking_options_for_post_and_untracked(db):
+    import pytest
+    from app.services import orders as order_svc
+    from app.services.errors import ServiceError
+    assert order_svc.validate_tracking(db, "NONE", "") == order_svc.NO_TRACKING
+    assert order_svc.validate_tracking(db, "JPPOST", "rr 123456789 jp") == "RR123456789JP"
+    assert order_svc.validate_tracking(db, "SPEEDPAK", "EE1234567890XX") == "EE1234567890XX"
+    with pytest.raises(ServiceError):
+        order_svc.validate_tracking(db, "JPPOST", "")
+    with pytest.raises(ServiceError):
+        order_svc.validate_tracking(db, "JPPOST", "12345")
+    assert "japanpost" in order_svc.tracking_url("JPPOST", "RR123456789JP")
+    assert order_svc.tracking_url("NONE", "x") == ""

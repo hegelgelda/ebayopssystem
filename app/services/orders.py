@@ -23,10 +23,13 @@ TRACKING_STATUSES = {
     "picked_up": "集荷済み", "in_transit": "輸送中", "customs": "通関中", "customs_hold": "通関保留",
     "exception": "配達例外", "delivered": "配達完了",
 }
-CARRIERS = {"FEDEX": "FedEx", "DHL": "DHL Express"}
+CARRIERS = {"FEDEX": "FedEx", "DHL": "DHL Express", "SPEEDPAK": "eBay SpeedPAK", "JPPOST": "日本郵便",
+            "NONE": "追跡なし（エコノミー）"}
+NO_TRACKING = "NO-TRACKING"
 TRACKING_URLS = {
     "FEDEX": "https://www.fedex.com/fedextrack/?trknbr={n}",
     "DHL": "https://www.dhl.com/global-en/home/tracking/tracking-express.html?submit=1&tracking-id={n}",
+    "JPPOST": "https://trackings.post.japanpost.jp/services/srv/search/direct?reqCodeNo1={n}&locale=en",
 }
 
 
@@ -152,8 +155,12 @@ def record_unsold(db: Session, user: User, listing: Listing) -> None:
 def validate_tracking(db: Session, carrier: str, number: str) -> str:
     carrier = (carrier or "").upper()
     if carrier not in CARRIERS:
-        raise ServiceError("キャリアは FedEx / DHL から選んでください")
-    number = re.sub(r"[\s-]", "", number or "")
+        raise ServiceError("配送方法を選んでください")
+    if carrier == "NONE":
+        return NO_TRACKING
+    number = re.sub(r"[\s-]", "", number or "").upper()
+    if not number:
+        raise ServiceError("追跡番号を入力してください（追跡のない発送は「追跡なし（エコノミー）」を選びます）")
     rx = (get_setting(db, "tracking_regex") or {}).get(carrier)
     if rx and not re.fullmatch(rx, number):
         raise ServiceError(f"{CARRIERS[carrier]} の追跡番号の形式ではありません")

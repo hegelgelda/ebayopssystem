@@ -4,7 +4,7 @@
 <h1>追跡番号の確認</h1>
 <div class="card">
   <p>注文 #{{ o.id }} {{ o.item.key_label }} {{ o.item.display_name }}{% if o.quantity > 1 %} ×{{ o.quantity }}{% endif %}</p>
-  <dl class="kv"><dt>キャリア</dt><dd><b>{{ carriers[carrier] }}</b></dd><dt>追跡番号</dt><dd><b style="font-size:20px;letter-spacing:1px">{{ number }}</b></dd></dl>
+  <dl class="kv"><dt>キャリア</dt><dd><b>{{ carriers[carrier] }}</b></dd><dt>追跡番号</dt><dd>{% if carrier == 'NONE' %}<b>なし</b>（エコノミー・追跡のない発送）{% else %}<b style="font-size:20px;letter-spacing:1px">{{ number }}</b>{% endif %}</dd></dl>
   <p class="small muted">送り状の番号と一致しているか確認してください。登録後の修正・削除はLv2のみ可能です。</p>
   <form method="post" action="/orders/{{ o.id }}/tracking" class="actions">
     <input type="hidden" name="carrier" value="{{ carrier }}"><input type="hidden" name="number" value="{{ number }}"><input type="hidden" name="version" value="{{ version }}">

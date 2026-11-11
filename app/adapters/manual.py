@@ -73,8 +73,9 @@ class ManualListingAdapter(ListingAdapter):
             assert item is not None
             psa = item.category == Category.PSA
             cat = (ebay_cats.get(item.category) or {})
+            row_defaults = {**defaults, "shipping_profile": listing_svc.shipping_profile_for(defaults, item.category)}
             ctx = {"draft": d, "item": item, "specs": d.item_specifics_json or {},
-                   "images": listing_svc.image_urls(item), "defaults": defaults,
+                   "images": listing_svc.image_urls(item), "defaults": row_defaults,
                    "category_id": cat.get("category_id") or defaults.get("category_id", ""),
                    "condition_id": cat.get("condition_id") or defaults.get("condition_id", ""),
                    "grader_id": conf.get("grader_ids", {}).get((item.grader or "").upper(), item.grader or "") if psa else "",
@@ -231,10 +232,20 @@ class ManualOrderAdapter(OrderAdapter):
         o = shipment.order
         carrier = order_svc.CARRIERS.get(shipment.carrier, shipment.carrier)
         item_id = o.listing.ebay_item_id if o.listing else ""
-        return TrackingUploadResult(status="pending", instructions=[
+        find = [
             "eBay Seller Hub を開き、「Orders（注文）」→「Awaiting shipment（発送待ち）」を表示する",
             f"商品ID {item_id}（落札者 {o.buyer_username or '-'}）の注文を探す",
-            "「Add tracking number（追跡番号を追加）」を押す",
-            f"Carrier（配送業者）に「{carrier}」を選び、追跡番号「{shipment.tracking_number}」を入力して保存する",
-            "注文が「Shipped（発送済み）」になったことを確認し、このページの「eBayに登録済み」を押す",
-        ])
+        ]
+        done = "注文が「Shipped（発送済み）」になったことを確認し、このページの「eBayに登録済み」を押す"
+        if shipment.carrier == "NONE":
+            return TrackingUploadResult(status="pending", instructions=[
+                *find, "「Mark as shipped（発送済みにする）」を押す（追跡番号は入れない）", done])
+        if shipment.carrier == "SPEEDPAK":
+            return TrackingUploadResult(status="pending", instructions=[
+                *find, "SpeedPAK のラベルを eBay から作った場合、追跡番号は自動で反映されます。反映されていなければ"
+                       f"「Add tracking number」で「eBay SpeedPAK」を選び「{shipment.tracking_number}」を入力", done])
+        eb_carrier = {"JPPOST": "Japan Post"}.get(shipment.carrier, carrier)
+        return TrackingUploadResult(status="pending", instructions=[
+            *find, "「Add tracking number（追跡番号を追加）」を押す",
+            f"Carrier（配送業者）に「{eb_carrier}」を選び、追跡番号「{shipment.tracking_number}」を入力して保存する",
+            done])

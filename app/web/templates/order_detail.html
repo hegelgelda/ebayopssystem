@@ -70,7 +70,7 @@
 <div class="card" id="tracking">
   <h2 style="margin-top:0">発送・追跡</h2>
   {% if shipment %}
-    <p>{{ carriers[shipment.carrier] }} <b>{{ shipment.tracking_number }}</b> ・ <a href="{{ tracking_url }}" target="_blank">キャリアの追跡ページ</a>
+    <p>{{ carriers[shipment.carrier] }}{% if shipment.carrier != 'NONE' %} <b>{{ shipment.tracking_number }}</b>{% endif %}{% if tracking_url %} ・ <a href="{{ tracking_url }}" target="_blank">キャリアの追跡ページ</a>{% endif %}
       ・ eBay登録 {% if shipment.ebay_upload_status == 'uploaded' %}<span class="badge ok">登録済み {{ shipment.ebay_uploaded_at|jst }}</span>{% else %}<span class="badge warn">未登録</span>{% endif %}</p>
     {% if instructions %}
     <div class="card" style="background:var(--warn-bg)">
@@ -92,7 +92,7 @@
     <details style="margin-top:10px"><summary>追跡番号の修正・削除（Lv2）</summary>
       <form method="post" action="/orders/{{ o.id }}/tracking/confirm" class="row">{{ version_field(o) }}
         <div><label>キャリア</label><select name="carrier">{% for k, v in carriers.items() %}<option value="{{ k }}" {% if k == shipment.carrier %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
-        <div><label>追跡番号</label><input type="text" name="number" inputmode="numeric" required></div><div><button>修正する</button></div></form>
+        <div><label>追跡番号</label><input type="text" name="number" autocapitalize="characters" placeholder="追跡なしの場合は空欄"></div><div><button>修正する</button></div></form>
       <form method="post" action="/orders/{{ o.id }}/tracking/delete" class="row">{{ version_field(o) }}
         <div><label>削除理由</label><input type="text" name="reason" required></div><div><button class="danger">削除</button></div></form>
     </details>
@@ -100,7 +100,7 @@
   {% elif o.status == 'AWAITING_SHIPMENT' %}
     <form method="post" action="/orders/{{ o.id }}/tracking/confirm" class="row">{{ version_field(o) }}
       <div><label>キャリア</label><select name="carrier">{% for k, v in carriers.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
-      <div><label>追跡番号</label><input type="text" name="number" inputmode="numeric" required></div>
+      <div><label>追跡番号</label><input type="text" name="number" autocapitalize="characters" placeholder="追跡なしの場合は空欄"></div>
       <div><button class="primary">確認へ</button></div></form>
   {% else %}<p class="muted">支払完了後に追跡番号を入力できます。</p>{% endif %}
 </div>
