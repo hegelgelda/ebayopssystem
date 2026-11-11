@@ -57,11 +57,28 @@ def job_poll() -> None:
 def job_catalog() -> None:
     from app.services import importers
     from app.settings_store import get_setting
+    try:  # tcg-catalog が落ちていても Limitless の補完は続ける
+        with session_scope() as db:
+            url = get_setting(db, "card_catalog_url")
+            if url:
+                res = importers.import_tcg_catalog(db, url)
+                log.info("card catalog synced: %s", res)
+    except Exception:  # noqa: BLE001
+        log.exception("tcg-catalog sync failed")
+    if get_setting_safe("card_catalog_limitless"):
+        with session_scope() as db:
+            res = importers.import_limitless_jp(db)
+            log.info("limitless jp synced: %s", res)
+            if res["new_sets"]:
+                from app.services.notify import enqueue_post
+                enqueue_post(db, "system", "🆕 カード一覧に新しい弾を追加しました：" + "、".join(res["new_sets"]),
+                             mention_roles=[])
+
+
+def get_setting_safe(key: str):
+    from app.settings_store import get_setting
     with session_scope() as db:
-        url = get_setting(db, "card_catalog_url")
-        if url:
-            res = importers.import_tcg_catalog(db, url)
-            log.info("card catalog synced: %s", res)
+        return get_setting(db, key)
 
 
 @_safe("backup")

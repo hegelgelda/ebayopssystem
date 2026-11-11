@@ -245,6 +245,7 @@ def import_tcg_catalog(db: Session, url: str) -> dict:
         raise
     health.record(db, "tcg-catalog", ok=True)
     ins, upd = upsert_card_rows(db, rows, "tcg-catalog")
+    apply_set_names(db)
     return {"inserted": ins, "updated": upd, "sets": len({x["set_id"] for x in rows}), "cards": len(rows)}
 
 
@@ -286,4 +287,190 @@ def import_cards(db: Session, path: Path) -> int:
         row.set_name = pick(r, "set_name", "setName", "set_name_en") or row.set_name
         db.merge(row)
         n += 1
+    return n
+
+
+# ---- Limitless TCG（日本語版の弾一覧）：tcg-catalog に無い新弾・欠けている英語名を補う ----
+
+LIMITLESS_BASE = "https://limitlesstcg.com"
+LIMITLESS_UA = "TorelisOps/1.0 (card catalog sync; once a day)"
+_MONTHS = {m: i for i, m in enumerate(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov",
+                                       "Dec"], start=1)}
+
+
+def _limitless_date(s: str) -> date | None:
+    m = re.match(r"\s*(\d{1,2})\s+([A-Za-z]{3})\s+(\d{2,4})", s or "")
+    if not m or m.group(2) not in _MONTHS:
+        return None
+    y = int(m.group(3))
+    return date(y + 2000 if y < 100 else y, _MONTHS[m.group(2)], int(m.group(1)))
+
+
+def parse_limitless_sets(html: str) -> list[dict]:
+    """/cards/jp の弾一覧 → [{set_id, name_en, release, count}]（新しい順）。"""
+    out = []
+    for row in re.findall(r"<tr>\s*(<td><a href=\"/cards/jp/[^\"]+\".*?)</tr>", html, re.S):
+        m = re.search(r'href="/cards/jp/([^"/?]+)"[^>]*>.*?>\s*([^<]*?)\s*<span class="code', row, re.S)
+        if not m:
+            continue
+        tds = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+        release = _limitless_date(re.sub(r"<[^>]+>", "", tds[1])) if len(tds) > 1 else None
+        cnt = re.search(r">\s*(\d+)\s*<span", tds[2]) if len(tds) > 2 else None
+        out.append({"set_id": m.group(1), "name_en": _html_unescape(m.group(2)), "release": release,
+                    "count": int(cnt.group(1)) if cnt else None})
+    return out
+
+
+def _html_unescape(s: str) -> str:
+    import html as _h
+    return _h.unescape(s or "").strip()
+
+
+def parse_limitless_set_page(html: str, set_id: str) -> list[dict]:
+    """弾のカード一覧（display=list）→ [{number, name, rarity, image_url, set_name_jp}]。"""
+    rows = []
+    for tr in re.findall(r'<tr data-hover="([^"]*)">(.*?)</tr>', html, re.S):
+        hover, body = tr
+        tip = re.search(r'data-tooltip="([^"]*)"', body)
+        cells = re.findall(r'<a href="/cards/jp/' + re.escape(set_id) + r'/([^"?]+)[^"]*">\s*(.*?)\s*</a>', body, re.S)
+        if len(cells) < 2:
+            continue
+        number = cells[0][0]
+        name = _html_unescape(re.sub(r"<[^>]+>", "", cells[1][1]))
+        rarity = _html_unescape(re.sub(r"<[^>]+>", "", cells[-1][1])) if len(cells) >= 4 else None
+        img = hover.replace("_XS.png", "_LG.png") if hover else None
+        rows.append({"number": number, "name": name or None, "rarity": rarity or None, "image_url": img,
+                     "set_name_jp": _html_unescape(tip.group(1)) if tip else None})
+    return rows
+
+
+def import_limitless_jp(db: Session, *, http=None, max_sets: int = 20, since_days: int = 730,
+                        refresh_days: int = 120, delay: float = 1.0) -> dict:
+    """Limitless の日本語版データで、カード一覧に無い弾・カードを追加し、空の英語名・レアリティ等を埋める。
+
+    tcg-catalog の値は上書きしない（空欄と仮の弾名だけ埋める）。1回に max_sets 弾まで（残りは翌日）。
+    """
+    import time as _time
+    from datetime import timedelta
+
+    import httpx
+
+    from app.services import health
+    from app.timeutil import today_jst
+    own = http is None
+    http = http or httpx.Client(timeout=60, follow_redirects=True, headers={"User-Agent": LIMITLESS_UA})
+    try:
+        try:
+            r = http.get(f"{LIMITLESS_BASE}/cards/jp")
+            r.raise_for_status()
+            sets = parse_limitless_sets(r.text)
+            if not sets:
+                raise ValueError("弾の一覧が見つかりません（ページの形式が変わった可能性）")
+        except Exception as e:  # noqa: BLE001
+            health.record(db, "limitless", ok=False, error=str(e))
+            raise
+        today = today_jst()
+        by_set: dict[str, list[CardCatalog]] = {}
+        for c in db.scalars(select(CardCatalog)):
+            by_set.setdefault(c.set_id, []).append(c)
+
+        from app.settings_store import get_setting, set_setting
+        names: dict = dict(get_setting(db, "catalog_set_names") or {})
+
+        def wanted(st: dict) -> bool:
+            rel = st["release"]
+            if rel is None:
+                return False
+            have = by_set.get(st["set_id"], [])
+            if have and st["set_id"] not in names:
+                return True  # 古い弾も少しずつ（1日 max_sets 弾まで）弾名を確かめ、空欄を埋める
+            if rel < today - timedelta(days=since_days):
+                return False
+            if not have or rel >= today - timedelta(days=refresh_days):
+                return True
+            return any(c.name_en is None or c.rarity is None or c.set_name in (None, c.set_id) for c in have)
+
+        cands = [s for s in sets if wanted(s)]
+        cands.sort(key=lambda st: (st["set_id"] in names or not by_set.get(st["set_id"]), st["release"]), reverse=True)
+        targets = cands[:max_sets]
+        res = {"sets_checked": len(targets), "new_sets": [], "inserted": 0, "filled": 0, "errors": []}
+        for st in targets:
+            sid = st["set_id"]
+            try:
+                base = f"{LIMITLESS_BASE}/cards/jp/{sid}?display=list&show=all"
+                jp = parse_limitless_set_page(http.get(base).raise_for_status().text, sid)
+                _time.sleep(delay)
+                en = {x["number"]: x for x in parse_limitless_set_page(
+                    http.get(base + "&translate=en").raise_for_status().text, sid)}
+                _time.sleep(delay)
+            except Exception as e:  # noqa: BLE001
+                res["errors"].append(f"{sid}: {e}")
+                continue
+            if not jp:
+                continue
+            if jp[0].get("set_name_jp"):
+                names[sid] = jp[0]["set_name_jp"]
+            was_new = not by_set.get(sid)
+            ins, filled = _merge_limitless_set(db, sid, jp, en, by_set)
+            if ins and was_new:
+                res["new_sets"].append(sid)
+            by_set.setdefault(sid, [])
+            res["inserted"] += ins
+            res["filled"] += filled
+        db.flush()
+        set_setting(db, "catalog_set_names", names, None)
+        releases = dict(get_setting(db, "catalog_set_release") or {})
+        releases.update({st["set_id"]: st["release"].isoformat() for st in sets if st["release"]})
+        set_setting(db, "catalog_set_release", releases, None)
+        res["renamed"] = apply_set_names(db)
+        health.record(db, "limitless", ok=not res["errors"], error="; ".join(res["errors"])[:500] or None)
+        return res
+    finally:
+        if own:
+            http.close()
+
+
+def _merge_limitless_set(db: Session, sid: str, jp: list[dict], en: dict, by_set: dict) -> tuple[int, int]:
+    from app.services.cardinfo import normalize_card_number
+    have: dict[str, list[CardCatalog]] = {}
+    for c in by_set.get(sid, []):
+        have.setdefault(normalize_card_number(c.card_number), []).append(c)
+    ins = filled = 0
+    for x in jp:
+        n = x["number"]
+        name_en = (en.get(n) or {}).get("name")
+        if name_en and not name_en.isascii():
+            name_en = None
+        vals = {"name_jp": x["name"], "name_en": name_en, "rarity": x["rarity"], "image_url": x["image_url"]}
+        new_vals = {**vals, "set_name": x["set_name_jp"], "set_name_jp": x["set_name_jp"]}
+        rows = have.get(normalize_card_number(n))
+        if not rows:
+            row = CardCatalog(model_id=f"{sid}-{n}", set_id=sid, card_number=n, source="limitless", **new_vals)
+            db.add(row)
+            by_set.setdefault(sid, []).append(row)
+            have[normalize_card_number(n)] = [row]
+            ins += 1
+            continue
+        for row in rows:  # 既存（tcg-catalog）は空欄と仮の弾名だけ埋める
+            changed = False
+            for k, v in vals.items():
+                cur = getattr(row, k)
+                if v and cur in (None, ""):
+                    setattr(row, k, v)
+                    changed = True
+            filled += changed
+    return ins, filled
+
+
+def apply_set_names(db: Session) -> int:
+    """Limitless で確かめた弾の日本語名を、カード一覧の弾名に反映する（tcg-catalog の誤り・仮名を直す）。"""
+    from app.settings_store import get_setting
+    names = get_setting(db, "catalog_set_names") or {}
+    n = 0
+    for c in db.scalars(select(CardCatalog).where(CardCatalog.set_id.in_(list(names)))):
+        want = names[c.set_id]
+        if c.set_name != want or c.set_name_jp != want:
+            c.set_name = c.set_name_jp = want
+            n += 1
+    db.flush()
     return n

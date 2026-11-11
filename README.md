@@ -69,6 +69,8 @@ Bot トークンが未設定の間も他のコンテナは動きます（通知�
 # CSV を data ボリュームに置く
 docker compose cp ./import app:/data/import
 # カード一覧（型番・日本語名・英語名・セット名・画像）。tcg-catalog から取り込む（毎日 4:10 に自動更新。設定画面の「今すぐ更新」でも可）
+# 続けて Limitless TCG（日本語版）から、tcg-catalog に無い新弾・カード、空欄の英語名・レアリティを補い、弾名の誤りを直す
+# （tcg-catalog の値は上書きしない。1日20弾まで。設定 card_catalog_limitless=false で止められる）
 docker compose exec app python -m app.cli import-catalog
 # モデルID → カード名（買取表HTMLの CARDS 定数。JSON / CSV も可）
 docker compose exec app python -m app.cli import-cards --file /data/import/buyback.html

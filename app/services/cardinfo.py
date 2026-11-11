@@ -195,7 +195,23 @@ def search_by_number(db: Session, number: str, set_q: str = "", limit: int = 30)
         like = f"%{set_q}%"
         stmt = stmt.where(or_(CardCatalog.set_id.ilike(like), CardCatalog.set_name.ilike(like),
                               CardCatalog.set_name_jp.ilike(like)))
-    return list(db.scalars(stmt.order_by(CardCatalog.set_id).limit(limit)).all())
+    rows = list(db.scalars(stmt.order_by(CardCatalog.set_id).limit(max(limit * 8, 200))).all())
+    # 同じ弾・同じ番号（"1" と "001"）は1件にまとめ、英語名・レアリティのある行を残す
+    best: dict[tuple[str, str], CardCatalog] = {}
+    for c in rows:
+        k = (c.set_id, normalize_card_number(c.card_number))
+        cur = best.get(k)
+        if cur is None or _richness(c) > _richness(cur):
+            best[k] = c
+    from app.settings_store import get_setting
+    release = get_setting(db, "catalog_set_release") or {}
+    # 新しい弾を先に（発売日が分からない弾は後ろ）
+    out = sorted(best.values(), key=lambda c: (release.get(c.set_id, ""), c.set_id), reverse=True)
+    return out[:limit]
+
+
+def _richness(c: CardCatalog) -> int:
+    return sum(1 for v in (c.name_en, c.rarity, c.image_url, c.name_jp) if v)
 
 
 def search_sets(db: Session, q: str = "", limit: int = 30) -> list[dict[str, str | None]]:

@@ -23,6 +23,7 @@
   <p>登録済み：<b>{{ catalog_stats[0] }}</b>枚・{{ catalog_stats[1] }}セット{% if catalog_stats[2] %}（最終更新 {{ catalog_stats[2]|jst }}）{% endif %}</p>
   <label>取得元のURL（毎日 4:10 に自動で更新）</label>
   <input type="text" name="url" value="{{ catalog_url }}">
+  <p class="small muted">tcg-catalog に無い新しい弾・英語名・レアリティは、続けて <b>Limitless TCG</b>（日本語版のカードデータ）から自動で補います。弾名の誤りも Limitless の日本語名に直します。tcg-catalog に入っている値は上書きしません。</p>
   <div class="actions"><button class="primary">今すぐ更新</button></div>
 </form>
 

@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 
 [tool.pytest.ini_options]
+markers = ["real_limitless: run the real Limitless importer against fake HTTP"]
 testpaths = ["tests"]
 addopts = "-q"
 filterwarnings = ["ignore::DeprecationWarning"]

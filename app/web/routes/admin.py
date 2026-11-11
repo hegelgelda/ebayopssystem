@@ -198,7 +198,22 @@ def settings_catalog(request: Request, url: str = Form(""), user: User = Depends
         raise ServiceError(f"カード一覧を取得できませんでした：{e}")
     audit.log(db, audit.Actor.user(user), "setting", "card_catalog", "catalog.import", after={"url": url, **res})
     db.commit()
-    flash(request, f"カード一覧を更新しました：{res['sets']}セット・{res['cards']}枚（新規 {res['inserted']}）")
+    msg = f"カード一覧を更新しました：{res['sets']}セット・{res['cards']}枚（新規 {res['inserted']}）"
+    if get_setting(db, "card_catalog_limitless"):
+        try:
+            lim = importers.import_limitless_jp(db, max_sets=40, delay=0.5)
+            audit.log(db, audit.Actor.user(user), "setting", "card_catalog", "catalog.limitless", after=lim)
+            db.commit()
+            msg += (f" ／ 最新弾の補完：{lim['sets_checked']}弾を確認、カード追加 {lim['inserted']}・"
+                    f"英語名など補完 {lim['filled']}・弾名の修正 {lim['renamed']}")
+            if lim["new_sets"]:
+                msg += "（新しい弾：" + "、".join(lim["new_sets"]) + "）"
+            if lim["errors"]:
+                flash(request, "一部の弾を取得できませんでした：" + "；".join(lim["errors"])[:300], "error")
+        except Exception as e:  # noqa: BLE001
+            db.commit()
+            flash(request, f"最新弾の補完（Limitless）に失敗しました：{e}", "error")
+    flash(request, msg)
     return to("/settings#catalog")
 
 

@@ -104,6 +104,8 @@ DEFAULTS: dict[str, Any] = {
     ],
     # シングルの型番検索に使うカード一覧の取得元（毎日自動で更新。設定画面から手動更新も可）
     "card_catalog_url": "https://hegelgelda.github.io/tcg-catalog/",
+    # tcg-catalog に無い新弾・英語名を Limitless TCG（日本語版）から補う。弾名の誤りもここで直す
+    "card_catalog_limitless": True,
     "payment_due_days": 4,
     "ship_business_days": 2,
     "delivered_to_completed_hours": 48,

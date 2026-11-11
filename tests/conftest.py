@@ -74,3 +74,13 @@ def jpeg_bytes(w=1200, h=2000, color=(200, 30, 30)) -> bytes:
     buf = io.BytesIO()
     Image.new("RGB", (w, h), color).save(buf, "JPEG")
     return buf.getvalue()
+
+
+@pytest.fixture(autouse=True)
+def _no_limitless_network(monkeypatch, request):
+    """テストで Limitless TCG に接続しない（専用テストは偽のHTTPを渡して本物の取り込み処理を使う）。"""
+    if "real_limitless" in request.keywords:
+        return
+    from app.services import importers
+    monkeypatch.setattr(importers, "import_limitless_jp", lambda db, **k: {
+        "sets_checked": 0, "new_sets": [], "inserted": 0, "filled": 0, "renamed": 0, "errors": []})
