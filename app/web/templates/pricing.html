@@ -13,7 +13,7 @@
 <p class="muted">このレーンの承認待ちはありません。</p>
 {% else %}
 {% set fixed = item.listing_format == 'fixed' %}
-<div class="grid" style="grid-template-columns:minmax(260px,1fr) minmax(320px,2fr)">
+<div class="grid pricing-grid">
   <div class="card">
     <h2 style="margin-top:0">{{ item.key_label }} {{ item_badge(item.status) }}</h2>
     <p>{{ cat_badge(item) }} {{ fmt_badge(item.listing_format) }}</p>

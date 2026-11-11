@@ -116,7 +116,7 @@ def listings_page(request: Request, lane: str = "", user: User = Depends(current
 @router.post("/listings/generate")
 async def listings_generate(request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
     form = await request.form()
-    ids = [int(x) for x in form.getlist("item_id")]
+    ids = [i for i in (form_int(x) for x in form.getlist("item_id")) if i is not None]
     if not ids:
         raise ServiceError("在庫を選んでください")
     made = []
@@ -168,8 +168,10 @@ def draft_confirm(draft_id: int, request: Request, version: str = Form(""), user
 @router.post("/listings/export")
 async def listings_export(request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
     form = await request.form()
-    ids = [int(x) for x in form.getlist("draft_id")]
+    ids = [i for i in (form_int(x) for x in form.getlist("draft_id")) if i is not None]
     drafts = [d for d in (db.get(ListingDraft, i) for i in ids) if d]
+    if not drafts:
+        raise ServiceError("CSVに入れる在庫を選んでください")
     res = get_listing_adapter(db).submit(db, user, drafts)
     db.commit()
     flash(request, f"CSVを作成しました（{LF.LABELS[drafts[0].format]} {len(drafts)}件）。"

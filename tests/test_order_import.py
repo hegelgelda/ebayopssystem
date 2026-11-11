@@ -116,3 +116,11 @@ def test_partial_multi_order_then_full(db, users):
     db.commit()
     assert len(res.created) == 1 and len(res.unchanged) == 1
     assert db.query(Order).count() == 2
+
+
+def test_listing_routes_reject_bad_ids(admin_client):
+    """選択なし・不正なIDでも 500 にならず、エラーメッセージ付きで戻る。"""
+    for path, data in (("/listings/export", {}), ("/listings/export", {"draft_id": "None"}),
+                       ("/listings/generate", {"item_id": "abc"})):
+        r = admin_client.post(path, data=data)
+        assert r.status_code in (303, 400), (path, r.status_code)
