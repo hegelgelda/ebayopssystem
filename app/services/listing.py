@@ -35,20 +35,19 @@ _SHIPPING_EXPRESS = """<h3>Shipping</h3>
 </ul>
 """
 
-# シングル：エコノミー（無料）・スタンダード（$5）・SpeedPAK Express（$23）、発送先は欧州のみ
+# シングル：欧州（エコノミー無料・スタンダード$5・SpeedPAK Express $23）と米国（エコノミー$10・SpeedPAK Express $32）
 _SHIPPING_SINGLE_EU = """<h3>Shipping</h3>
 <ul>
   <li>All items ship from Japan within 2 business days of cleared payment.</li>
-  <li>Choose your shipping service at checkout:
+  <li>We ship to the <b>United States</b> and <b>Europe</b>. Choose your shipping service at checkout:
     <ul>
-      <li><b>Economy International Shipping &ndash; FREE.</b> Our most affordable option; please allow several weeks for delivery.</li>
-      <li><b>Standard International Shipping &ndash; US $5.00.</b> Faster delivery.</li>
-      <li><b>eBay SpeedPAK Express &ndash; US $23.00</b> (US $5.00 for each additional item). Our fastest option, fully tracked.</li>
+      <li><b>Europe:</b> Economy International Shipping &ndash; <b>FREE</b> / Standard International Shipping &ndash; US $5.00 / eBay SpeedPAK Express &ndash; US $23.00 (US $5.00 for each additional item)</li>
+      <li><b>United States:</b> Economy Shipping from outside US &ndash; US $10.00 / eBay SpeedPAK Express &ndash; US $32.00</li>
     </ul>
     The estimated delivery date for each service is shown in the shipping section of this listing.</li>
-  <li><b>Import duties and taxes are included (DDP).</b> You will not be charged anything on delivery.</li>
-  <li>We currently ship to Europe only. Please see the shipping section for the list of countries.</li>
-  <li>We do not ship to PO Boxes. Please provide a full physical address and a valid phone number.</li>
+  <li><b>Import duties and taxes are included (DDP).</b> You will not have to pay anything after checkout or on delivery.</li>
+  <li>eBay SpeedPAK Express is our fastest option and is fully tracked.</li>
+  <li>We do not ship to PO Boxes or APO/FPO addresses. Please provide a full physical address and a valid phone number.</li>
   <li>Delivery times are estimates and may vary due to customs clearance or postal delays.</li>
 </ul>
 """

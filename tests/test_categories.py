@@ -539,7 +539,7 @@ def test_delete_item(admin_client, staff_client, db, env, users):
 
 
 def test_single_eu_economy_shipping(admin_client, db, env, users):
-    """シングル：説明文はエコノミー無料／スタンダード$5／SpeedPAK $23・欧州のみ、CSV の配送ポリシーはシングル用。"""
+    """シングル：説明文は欧州（エコノミー無料／スタンダード$5／SpeedPAK $23）と米国（エコノミー$10／SpeedPAK $32）、CSV の配送ポリシーはシングル用。"""
     from app.models import Item
     from app.services import listing as listing_svc
     single = Item(category="single", sku="T-s1", model_id="SV2a-201", card_name_en="X", condition="nm")
@@ -547,11 +547,12 @@ def test_single_eu_economy_shipping(admin_client, db, env, users):
     db.add_all([single, psa])
     db.flush()
     desc = listing_svc.render(db, single)[1]
-    assert "Economy International Shipping &ndash; FREE" in desc and "US $5.00" in desc and "US $23.00" in desc
-    assert "ship to Europe only" in desc and "FedEx or DHL" not in desc
-    assert "For tracked services" in desc
+    assert "Economy International Shipping &ndash; <b>FREE</b>" in desc and "US $5.00" in desc and "US $23.00" in desc
+    assert "Economy Shipping from outside US &ndash; US $10.00" in desc and "US $32.00" in desc
+    assert "<b>United States</b> and <b>Europe</b>" in desc and "FedEx or DHL" not in desc
+    assert "For tracked services" in desc and "Import duties and taxes are included (DDP)" in desc
     pdesc = listing_svc.render(db, psa)[1]
-    assert "FedEx or DHL" in pdesc and "Europe only" not in pdesc
+    assert "FedEx or DHL" in pdesc and "SpeedPAK" not in pdesc
     db.rollback()  # 描画で作られたテンプレートは捨てる（アプリ側の書き込みと競合させない）
     # CSV：シングルはシングル用の配送ポリシー、PSA は従来どおり
     d1 = ready_item(admin_client, done_id(intake(admin_client, category="single", model_id="SV2a-025",
@@ -559,7 +560,7 @@ def test_single_eu_economy_shipping(admin_client, db, env, users):
     r = admin_client.post("/listings/export", data={"draft_id": str(d1)})
     batch = r.headers["location"].split("batch=")[1]
     rows = list(csv.reader(io.StringIO(admin_client.get(f"/exports/{batch}.csv").content.decode("utf-8-sig"))))[1:]
-    assert dict(zip(rows[0], rows[1]))["ShippingProfileName"] == "Torelis Single Economy Free (EU)"
+    assert dict(zip(rows[0], rows[1]))["ShippingProfileName"] == "Torelis Single US+EU"
     from app.settings_store import get_setting
     assert listing_svc.shipping_profile_for(get_setting(db, "listing_defaults"), "psa") == "Torelis Free Express (DDP)"
 
