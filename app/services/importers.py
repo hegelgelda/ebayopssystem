@@ -158,6 +158,14 @@ def extract_cards_constant(html: str) -> list[dict]:
 # ---- tcg-catalog（https://hegelgelda.github.io/tcg-catalog/）----
 # ページに埋め込まれた SERIES（セット一覧）と CARDS（{セットID: [{n, en, jp, r}]}）を読む。
 
+_JA = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uff66-\uff9f]")
+
+
+def has_japanese(s: str | None) -> bool:
+    """ひらがな・カタカナ・漢字を含むか（"Poké Pad" や "Nidoran♀" は英語名として扱う）。"""
+    return bool(s and _JA.search(s))
+
+
 LIMITLESS_IMG = "https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/tpc/{s}/{s}_{n}_R_JP_LG.png"
 
 
@@ -194,7 +202,7 @@ def parse_tcg_catalog(html: str, base_url: str = "") -> list[dict]:
             if not n:
                 continue
             en = (c.get("en") or "").strip() or None
-            if en and not en.isascii():  # プロモ等は en に日本語が入っている
+            if en and has_japanese(en):  # プロモ等は en に日本語が入っている
                 en = None
             if sid in promo:
                 img = urljoin(base_url, f"images/promo/{sid}/{sid}_{n}.webp") if base_url else None
@@ -246,6 +254,7 @@ def import_tcg_catalog(db: Session, url: str) -> dict:
     health.record(db, "tcg-catalog", ok=True)
     ins, upd = upsert_card_rows(db, rows, "tcg-catalog")
     apply_set_names(db)
+    fix_item_set_names(db)
     return {"inserted": ins, "updated": upd, "sets": len({x["set_id"] for x in rows}), "cards": len(rows)}
 
 
@@ -419,10 +428,14 @@ def import_limitless_jp(db: Session, *, http=None, max_sets: int = 20, since_day
             res["filled"] += filled
         db.flush()
         set_setting(db, "catalog_set_names", names, None)
+        names_en = dict(get_setting(db, "catalog_set_names_en") or {})
+        names_en.update({st["set_id"]: st["name_en"] for st in sets if st["name_en"] and not has_japanese(st["name_en"])})
+        set_setting(db, "catalog_set_names_en", names_en, None)
         releases = dict(get_setting(db, "catalog_set_release") or {})
         releases.update({st["set_id"]: st["release"].isoformat() for st in sets if st["release"]})
         set_setting(db, "catalog_set_release", releases, None)
         res["renamed"] = apply_set_names(db)
+        res["items_fixed"] = fix_item_set_names(db)
         health.record(db, "limitless", ok=not res["errors"], error="; ".join(res["errors"])[:500] or None)
         return res
     finally:
@@ -439,7 +452,7 @@ def _merge_limitless_set(db: Session, sid: str, jp: list[dict], en: dict, by_set
     for x in jp:
         n = x["number"]
         name_en = (en.get(n) or {}).get("name")
-        if name_en and not name_en.isascii():
+        if name_en and has_japanese(name_en):
             name_en = None
         vals = {"name_jp": x["name"], "name_en": name_en, "rarity": x["rarity"], "image_url": x["image_url"]}
         new_vals = {**vals, "set_name": x["set_name_jp"], "set_name_jp": x["set_name_jp"]}
@@ -462,15 +475,62 @@ def _merge_limitless_set(db: Session, sid: str, jp: list[dict], en: dict, by_set
     return ins, filled
 
 
+# Limitless と記号が違うプロモ（SV-P ↔ SVP など）は英語名を固定で持つ
+PROMO_SET_EN = {
+    "ADV-P": "ADV Promo", "BW-P": "Black & White Promo", "DP-P": "DP Promo", "DPt-P": "DPt Promo",
+    "L-P": "LEGEND Promo", "M-P": "MEGA Promo", "PCG-P": "PCG Promo", "S-P": "Sword & Shield Promo",
+    "SM-P": "Sun & Moon Promo", "SV-P": "Scarlet & Violet Promo", "XY-P": "XY Promo",
+}
+BASIC_ENERGY_EN = {
+    "基本草エネルギー": "Basic Grass Energy", "基本炎エネルギー": "Basic Fire Energy",
+    "基本水エネルギー": "Basic Water Energy", "基本雷エネルギー": "Basic Lightning Energy",
+    "基本超エネルギー": "Basic Psychic Energy", "基本闘エネルギー": "Basic Fighting Energy",
+    "基本悪エネルギー": "Basic Darkness Energy", "基本鋼エネルギー": "Basic Metal Energy",
+    "基本フェアリーエネルギー": "Basic Fairy Energy",
+}
+
+
 def apply_set_names(db: Session) -> int:
-    """Limitless で確かめた弾の日本語名を、カード一覧の弾名に反映する（tcg-catalog の誤り・仮名を直す）。"""
+    """弾名を揃える：set_name＝英語名（eBayのタイトル・Set欄に使う）、set_name_jp＝日本語名。
+
+    どちらも Limitless で確かめた名前で、tcg-catalog の誤り・仮名・日本語のままの set_name を直す。
+    """
     from app.settings_store import get_setting
-    names = get_setting(db, "catalog_set_names") or {}
+    jp = get_setting(db, "catalog_set_names") or {}
+    en = {**PROMO_SET_EN, **(get_setting(db, "catalog_set_names_en") or {})}
     n = 0
-    for c in db.scalars(select(CardCatalog).where(CardCatalog.set_id.in_(list(names)))):
-        want = names[c.set_id]
-        if c.set_name != want or c.set_name_jp != want:
-            c.set_name = c.set_name_jp = want
+    for c in db.scalars(select(CardCatalog).where(CardCatalog.name_en.is_(None),
+                                                  CardCatalog.name_jp.in_(list(BASIC_ENERGY_EN)))):
+        c.name_en = BASIC_ENERGY_EN[c.name_jp]
+    ids = set(jp) | set(en)
+    for c in db.scalars(select(CardCatalog).where(CardCatalog.set_id.in_(list(ids)))):
+        want_en = en.get(c.set_id) or (c.set_name if not has_japanese(c.set_name) else None)
+        want_jp = jp.get(c.set_id) or (c.set_name_jp if has_japanese(c.set_name_jp) else
+                                       (c.set_name if has_japanese(c.set_name) else c.set_name_jp))
+        changed = False
+        if want_en and c.set_name != want_en:
+            c.set_name, changed = want_en, True
+        if want_jp and c.set_name_jp != want_jp:
+            c.set_name_jp, changed = want_jp, True
+        n += changed
+    db.flush()
+    return n
+
+
+def fix_item_set_names(db: Session) -> int:
+    """出品前の在庫で弾名が日本語のものを英語名に直す（タイトルが英語になるように）。"""
+    from app import audit
+    from app.models import Item, ItemStatus as IS
+    from app.settings_store import get_setting
+    en = {**PROMO_SET_EN, **(get_setting(db, "catalog_set_names_en") or {})}
+    n = 0
+    for it in db.scalars(select(Item).where(Item.status.in_([IS.INTAKE, IS.PHOTOGRAPHED, IS.PRICED, IS.READY]),
+                                            Item.set_id.in_(list(en)))):
+        if has_japanese(it.set_name) and en.get(it.set_id):
+            audit.log(db, audit.Actor.system(), "item", it.id, "item.set_name_english",
+                      before={"set_name": it.set_name}, after={"set_name": en[it.set_id]})
+            it.set_name = en[it.set_id]
+            it.version += 1
             n += 1
     db.flush()
     return n
