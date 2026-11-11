@@ -169,3 +169,9 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
 .fmt-opt.lane-auction:not(:disabled):hover { border-color: #8a3ffc; }
 .fmt-opt:disabled:not(.active) { opacity: .45; cursor: not-allowed; }
 .fmt-card { max-width: 560px; scroll-margin-top: 90px; }
+
+/* 撮影：完了ボタン */
+.done-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 20px; padding: 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.done-bar button { min-width: 260px; }
+@media (max-width: 640px) { .done-bar button { width: 100%; } }

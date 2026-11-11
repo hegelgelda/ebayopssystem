@@ -32,8 +32,14 @@
   <label class="btn">＋ ファイルから追加<input type="file" accept="image/*" multiple hidden id="extra-file"></label>
 </div>
 
-<div class="actions" style="margin-top:20px">
-  {% if next_item %}<a class="btn primary big" href="/photos/{{ next_item.id }}">次の{{ next_item.category_label }}へ（{{ next_item.key_label }}）</a>{% endif %}
+<form method="post" action="/photos/{{ item.id }}/done" id="done-form" class="done-bar">
+  <button class="primary big" id="done-btn" {% if item.status in ('SOLD', 'WITHDRAWN') %}disabled{% endif %}>
+    ✓ 撮影完了{% if next_item %}（次の{{ next_item.category_label }}へ）{% else %}（一覧へ戻る）{% endif %}</button>
+  <span class="small muted" id="done-note">{% if next_item %}次：{{ next_item.key_label }} {{ next_item.display_name }}{% else %}この区分の未撮影はこれが最後です{% endif %}</span>
+</form>
+
+<div class="actions" style="margin-top:12px">
+  {% if next_item %}<a class="btn" href="/photos/{{ next_item.id }}">スキップして次へ（{{ next_item.key_label }}）</a>{% endif %}
   <a class="btn" href="/photos?category={{ item.category }}">未撮影一覧へ</a>
   <a class="btn" href="/items/{{ item.id }}">在庫詳細</a>
   {% if item.active_photos() %}<form class="inline" method="post" action="/items/{{ item.id }}/reprocess-photos"><button>今の設定で整形し直す</button></form>{% endif %}
@@ -94,6 +100,29 @@
     if (pending) pollTimer = setTimeout(poll, 2000);
   }
   poll();
+
+  // 撮影完了：未送信の写真を送り切ってから完了にする
+  const doneForm = document.getElementById('done-form'), doneBtn = document.getElementById('done-btn');
+  doneForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const front = document.querySelector('.slot[data-kind=front]');
+    const queued = async () => ((await PhotoUploader.pending()) || []).filter(r => String(r.item_id) === String(ITEM));
+    let left = await queued();
+    if (!front.classList.contains('filled') && !left.some(r => r.kind === 'front') && !front.querySelector('.preview img')) {
+      alert('表の写真を撮ってから完了してください（裏は任意です）');
+      return;
+    }
+    doneBtn.disabled = true;
+    const label = doneBtn.textContent;
+    if (left.length) {
+      doneBtn.textContent = `送信中…（残り ${left.length}枚）`;
+      for (let i = 0; i < 20 && left.length; i++) { await PhotoUploader.flush(); left = await queued(); if (left.length) await new Promise(r => setTimeout(r, 1500)); }
+      if (left.length && !confirm(`まだ送信できていない写真が ${left.length}枚あります。\n電波が戻ると自動で再送されますが、このまま完了しますか？`)) {
+        doneBtn.disabled = false; doneBtn.textContent = label; return;
+      }
+    }
+    doneForm.submit();
+  });
 })();
 </script>
 {% endblock %}

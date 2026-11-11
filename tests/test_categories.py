@@ -464,3 +464,25 @@ def test_format_switch_on_item_detail(admin_client, db, env, users):
     db.commit()
     listed = admin_client.get(f"/items/{item_id}").text
     assert "出品中は変更できません" in listed and "不落札を記録" in listed
+
+
+def test_photo_done_button(admin_client, db, env, users):
+    """撮影完了：表が無ければ止める。あれば撮影済みにして同じ区分の次の未撮影へ。"""
+    from app.models import Item
+    a = done_id(intake(admin_client, category="single", model_id="SV2a-025", card_name_en="Pikachu", condition="nm"))
+    b = done_id(intake(admin_client, category="single", model_id="SV2a-201", card_name_en="Charizard ex",
+                       condition="nm"))
+    page = admin_client.get(f"/photos/{a}").text
+    assert 'id="done-btn"' in page and "撮影完了（次のシングルへ）" in page and "スキップして次へ" in page
+    r = admin_client.post(f"/photos/{a}/done")
+    assert r.status_code == 303 and r.headers["location"] != f"/photos/{b}"  # 表なし → 進まない
+    db.expire_all()
+    assert db.get(Item, a).status == "INTAKE"
+    upload(admin_client, a, "front", n=5)
+    r = admin_client.post(f"/photos/{a}/done")
+    assert r.headers["location"] == f"/photos/{b}"
+    db.expire_all()
+    assert db.get(Item, a).status == "PHOTOGRAPHED"
+    upload(admin_client, b, "front", n=6)
+    r = admin_client.post(f"/photos/{b}/done")
+    assert r.headers["location"] == "/photos?category=single"  # 最後の1件は一覧へ

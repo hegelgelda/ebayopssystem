@@ -303,6 +303,26 @@ def photo_shoot(item_id: int, request: Request, user: User = Depends(current_use
     return render(request, "photo_shoot.html", {"user": user, "item": item, "next_item": nxt, "slots": slots})
 
 
+@router.post("/photos/{item_id}/done")
+def photo_done(item_id: int, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """撮影完了：表の写真があれば撮影済みにして、同じ区分の次の未撮影へ進む。"""
+    item = item_svc.get_item(db, item_id)
+    if item.status in (IS.SOLD, IS.WITHDRAWN):
+        raise ServiceError("売却済み・取り下げの在庫です")
+    if not item.photo("front"):
+        raise ServiceError("表の写真を撮ってから完了してください（裏は任意です）")
+    photo_svc.maybe_mark_photographed(db, item, audit.Actor.user(user))
+    audit.log(db, audit.Actor.user(user), "item", item.id, "item.photos_done",
+              after={"photos": len(item.active_photos())})
+    db.commit()
+    n = len(item.active_photos())
+    flash(request, f"✓ 撮影完了：{item.key_label} {item.display_name}（{n}枚）")
+    same = select(Item).where(Item.status == IS.INTAKE, Item.id != item.id, Item.category == item.category)
+    nxt = db.scalar(same.where(Item.id > item.id).order_by(Item.id).limit(1)) or db.scalar(
+        same.order_by(Item.id).limit(1))
+    return to(f"/photos/{nxt.id}" if nxt else f"/photos?category={item.category}")
+
+
 def _photo_json(p: Photo) -> dict:
     return {"id": p.id, "kind": p.kind, "seq": p.seq, "status": p.process_status, "bg_removed": p.bg_removed,
             "url": ("/img/" + p.processed_path) if p.processed_path else None,
