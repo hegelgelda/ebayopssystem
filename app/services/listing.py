@@ -63,7 +63,7 @@ _RETURNS_PAYMENT = """<h3>Returns</h3>
 <ul>
   <li>Immediate payment is required for Buy It Now purchases.</li>
   <li>All payments are processed securely through eBay.</li>
-  <li>Orders ship within {{ handling_days }} business days after payment is confirmed{% if category in ('single', 'pack', 'bulk') %}. For tracked services, the tracking number is uploaded to eBay at dispatch{% else %}, and your tracking number will be uploaded to eBay at dispatch{% endif %}.</li>
+  <li>Orders ship within {{ handling_days }} business days after payment is confirmed{% if category in ('psa', 'single', 'pack', 'bulk') %}. For tracked services, the tracking number is uploaded to eBay at dispatch{% else %}, and your tracking number will be uploaded to eBay at dispatch{% endif %}.</li>
 </ul>
 </div>"""
 
@@ -88,7 +88,7 @@ DEFAULT_TEMPLATES: dict[str, dict[str, str]] = {
   <li>Certification Number: {{ cert_number }}</li>
 </ul>
 <p>The item you will receive is the exact card shown in the photos.</p>
-""" + _SHIPPING_RETURNS,
+""" + _SHIPPING_RETURNS_SINGLE,
         "item_specifics": _specs({
             "Game": "Pokémon TCG", "Card Name": "{{ card_name_en }}", "Set": "{{ set_name or set_id }}",
             "Card Number": "{{ card_number }}", "Language": "Japanese", "Year Manufactured": "{{ year }}",

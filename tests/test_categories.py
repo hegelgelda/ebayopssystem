@@ -552,7 +552,7 @@ def test_single_eu_economy_shipping(admin_client, db, env, users):
     assert "<b>United States</b> and <b>Europe</b>" in desc and "FedEx or DHL" not in desc
     assert "For tracked services" in desc and "Import duties and taxes are included (DDP)" in desc
     pdesc = listing_svc.render(db, psa)[1]
-    assert "FedEx or DHL" in pdesc and "SpeedPAK" not in pdesc
+    assert "Economy Shipping from outside US" in pdesc and "FedEx or DHL" not in pdesc  # PSA も米国＋欧州
     db.rollback()  # 描画で作られたテンプレートは捨てる（アプリ側の書き込みと競合させない）
     # CSV：シングルはシングル用の配送ポリシー、PSA は従来どおり
     d1 = ready_item(admin_client, done_id(intake(admin_client, category="single", model_id="SV2a-025",
@@ -562,7 +562,8 @@ def test_single_eu_economy_shipping(admin_client, db, env, users):
     rows = list(csv.reader(io.StringIO(admin_client.get(f"/exports/{batch}.csv").content.decode("utf-8-sig"))))[1:]
     assert dict(zip(rows[0], rows[1]))["ShippingProfileName"] == "Torelis Single US + EU"
     from app.settings_store import get_setting
-    assert listing_svc.shipping_profile_for(get_setting(db, "listing_defaults"), "psa") == "Torelis Free Express (DDP)"
+    assert listing_svc.shipping_profile_for(get_setting(db, "listing_defaults"), "psa") == "Torelis Single US + EU"
+    assert listing_svc.shipping_profile_for(get_setting(db, "listing_defaults"), "box") == "Torelis Free Express (DDP)"
 
 
 def test_tracking_options_for_post_and_untracked(db):
