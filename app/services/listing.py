@@ -63,7 +63,7 @@ _RETURNS_PAYMENT = """<h3>Returns</h3>
 <ul>
   <li>Immediate payment is required for Buy It Now purchases.</li>
   <li>All payments are processed securely through eBay.</li>
-  <li>Orders ship within 2 business days after payment is confirmed{% if category == 'single' %}. For tracked services, the tracking number is uploaded to eBay at dispatch{% else %}, and your tracking number will be uploaded to eBay at dispatch{% endif %}.</li>
+  <li>Orders ship within 2 business days after payment is confirmed{% if category in ('single', 'pack') %}. For tracked services, the tracking number is uploaded to eBay at dispatch{% else %}, and your tracking number will be uploaded to eBay at dispatch{% endif %}.</li>
 </ul>
 </div>"""
 
@@ -123,7 +123,7 @@ Shipped in a sleeve and top loader.</p>
   <li>Condition: Factory sealed, unopened</li>
   {% if quantity > 1 %}<li>Quantity available: {{ quantity }}</li>{% endif %}
 </ul>
-""" + _SHIPPING_RETURNS,
+""" + _SHIPPING_RETURNS_SINGLE,
         "item_specifics": _specs({
             "Game": "Pokémon TCG", "Set": "{{ set_name or set_id }}", "Configuration": "Pack", "Number of Packs": "1",
             "Language": "Japanese", "Manufacturer": "The Pokémon Company"}),

@@ -578,3 +578,20 @@ def test_tracking_options_for_post_and_untracked(db):
         order_svc.validate_tracking(db, "JPPOST", "12345")
     assert "japanpost" in order_svc.tracking_url("JPPOST", "RR123456789JP")
     assert order_svc.tracking_url("NONE", "x") == ""
+
+
+def test_pack_uses_us_eu_shipping(db):
+    from app.models import Item
+    from app.services import listing as listing_svc
+    from app.settings_store import get_setting
+    pack = Item(category="pack", sku="P-T1", set_id="M6a", set_name="30th Celebration", card_name_en="30th Celebration")
+    box = Item(category="box", sku="X-T1", set_id="M6a", set_name="30th Celebration", card_name_en="30th Celebration")
+    db.add_all([pack, box])
+    db.flush()
+    pdesc = listing_svc.render(db, pack)[1]
+    assert "Economy Shipping from outside US &ndash; US $10.00" in pdesc and "FedEx or DHL" not in pdesc
+    assert "Sealed products" in pdesc and "For tracked services" in pdesc
+    assert "FedEx or DHL" in listing_svc.render(db, box)[1]
+    d = get_setting(db, "listing_defaults")
+    assert listing_svc.shipping_profile_for(d, "pack") == "Torelis Single US + EU"
+    assert listing_svc.shipping_profile_for(d, "box") == "Torelis Free Express (DDP)"
